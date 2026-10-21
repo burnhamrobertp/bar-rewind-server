@@ -35,7 +35,7 @@ Rough us-east-1 prices, idle and per use:
 | | |
 |---|---|
 | Idle | under $1/month: S3 storage, the worker image in ECR |
-| A parse | Fargate Spot, 2 vCPU / 8 GB, a few cents an hour of parsing |
+| A parse | Fargate Spot, 2 vCPU / 16 GB, a few cents an hour of parsing |
 | Downloads | CloudFront's free tier covers 1 TB/month |
 | Lambda, DynamoDB, SSM | inside their free tiers at this scale |
 
