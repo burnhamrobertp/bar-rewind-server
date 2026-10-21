@@ -18,10 +18,12 @@ POST /api/jobs --> DynamoDB jobs table --> Fargate Spot task (worker/), started 
                                            parse, gzips the .curves into S3 and reports progress
 ```
 
-- One worker at a time drains the queue and exits after 10 idle minutes. Nothing runs while nothing is queued.
+- One worker at a time drains the queue and exits after 2 idle minutes. Nothing runs while nothing is queued.
 - Jobs report a stage, a percentage and a heartbeat; the page flags a job that stops moving. A job whose
   worker disappears (a Spot reclaim, a crash) goes back in the queue, up to 3 tries.
 - Parsed replays, their logs and their jobs expire after 60 days (S3 lifecycle, DynamoDB TTL).
+- Queueing a replay that is already parsed returns it as is, unless it failed, its file has expired, or
+  it was parsed in an older .curves format than the deployed worker writes; those are parsed again.
 - `.curves` are stored gzipped and served with `Content-Encoding: gzip`: about 40% of the size crosses the wire.
 - Watch hands BAR-Rewind's player (Windows and Linux builds, served by the site) a one-hour signed link. The player
   only downloads from this site's host, which is built into it by `deploy.sh`.

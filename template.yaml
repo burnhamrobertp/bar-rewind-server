@@ -48,6 +48,9 @@ Parameters:
   ImageTag:
     Type: String
     Default: latest
+  CurvesVersion:
+    Type: Number
+    Description: The .curves format the worker image writes (BAR-Rewind's src/curves.zig version)
 
 Resources:
   # storage ---------------------------------------------------------------------------------------
@@ -204,6 +207,13 @@ Resources:
               - Effect: Allow
                 Action: [dynamodb:Scan, dynamodb:GetItem, dynamodb:PutItem]
                 Resource: !GetAtt Jobs.Arn
+              # HeadObject on a missing key answers 403 instead of 404 without ListBucket
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub "${Bucket.Arn}/curves/*"
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt Bucket.Arn
               - Effect: Allow
                 Action: ssm:GetParametersByPath
                 Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${AWS::StackName}"
@@ -241,6 +251,8 @@ Resources:
       Environment:
         Variables:
           TABLE: !Ref Jobs
+          BUCKET: !Ref Bucket
+          CURVES_VERSION: !Ref CurvesVersion
           PARAMS: !Sub "/${AWS::StackName}"
           CLUSTER: !Ref Cluster
           TASK_FAMILY: !Sub "${AWS::StackName}-worker"

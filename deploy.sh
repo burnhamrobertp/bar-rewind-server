@@ -77,10 +77,12 @@ fi
 VPC=$(aws ec2 describe-vpcs --filters Name=is-default,Values=true --query 'Vpcs[0].VpcId' --output text)
 SUBNETS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC" Name=default-for-az,Values=true --query 'Subnets[].SubnetId' --output text | tr '\t' ',')
 TAG=$(date -u +%Y%m%d%H%M%S)
+CURVES_VERSION=$(sed -n 's/^pub const version = \([0-9]*\);.*/\1/p' "$BAR_REWIND/src/curves.zig")
+[ -n "$CURVES_VERSION" ] || { echo "no curves version in $BAR_REWIND/src/curves.zig" >&2; exit 1; }
 aws cloudformation deploy --stack-name "$STACK" --template-file template.yaml --capabilities CAPABILITY_IAM \
   --no-fail-on-empty-changeset --tags "project=$STACK" --parameter-overrides \
   "SiteDomain=$DOMAIN" "CertificateArn=$CERT" "VpcId=$VPC" "SubnetIds=$SUBNETS" \
-  "CloudFrontPublicKey=$PUBLIC_KEY" "OriginSecret=$ORIGIN_SECRET" "AlertEmail=$EMAIL" "ImageTag=$TAG"
+  "CloudFrontPublicKey=$PUBLIC_KEY" "OriginSecret=$ORIGIN_SECRET" "AlertEmail=$EMAIL" "ImageTag=$TAG" "CurvesVersion=$CURVES_VERSION"
 BUCKET=$(output BucketName)
 REPO=$(output RepositoryUri)
 aws ssm put-parameter --name "/$STACK/site-url" --type String --overwrite --value "https://$DOMAIN" >/dev/null

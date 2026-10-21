@@ -13,6 +13,7 @@ from boto3.dynamodb.conditions import Attr
 TABLE = boto3.resource("dynamodb").Table(os.environ["TABLE"])
 ECS = boto3.client("ecs")
 SSM = boto3.client("ssm")
+S3 = boto3.client("s3")
 DISCORD = "https://discord.com/api/v10"
 REPLAY_API = "https://api.bar-rts.com/replays/"
 USER_AGENT = "bar-rewind-server (https://github.com/burnhamrobertp/bar-rewind-server, 1)"
@@ -22,6 +23,8 @@ DAILY_LIMIT = int(os.environ.get("DAILY_LIMIT", "30"))
 QUEUE_LIMIT = int(os.environ.get("QUEUE_LIMIT", "50"))
 MAX_MINUTES = int(os.environ.get("MAX_MINUTES", "150"))
 RETENTION_DAYS = int(os.environ.get("RETENTION_DAYS", "60"))
+# the .curves format the deployed worker writes; jobs parsed in an older one are parsed again
+CURVES_VERSION = int(os.environ.get("CURVES_VERSION", "0"))
 REPLAY_ID = re.compile(r"\b([0-9a-f]{32})\b")
 
 _params = None
@@ -166,8 +169,31 @@ def all_jobs():
         kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
 
 
+def outdated(job):
+    return job["status"] == "done" and int(job.get("curves_version", 0)) < CURVES_VERSION
+
+
+def curves_key(replay_id):
+    return f"curves/{replay_id}.curves"
+
+
+def stored(replay_id):
+    """Whether the parsed file is still in S3: the lifecycle rule can delete it before DynamoDB
+    gets round to expiring its job."""
+    try:
+        S3.head_object(Bucket=os.environ["BUCKET"], Key=curves_key(replay_id))
+    except S3.exceptions.ClientError as e:
+        if e.response["Error"]["Code"] in ("404", "NoSuchKey", "NotFound"):
+            return False
+        raise
+
+    return True
+
+
 def public(job):
-    return {k: (int(v) if hasattr(v, "as_integer_ratio") and not isinstance(v, bool) else v) for k, v in job.items() if k in PUBLIC}
+    fields = {k: (int(v) if hasattr(v, "as_integer_ratio") and not isinstance(v, bool) else v) for k, v in job.items() if k in PUBLIC}
+
+    return {**fields, "outdated": outdated(job)}
 
 
 def ensure_worker(jobs):
@@ -212,7 +238,9 @@ def submit(event, user):
 
     jobs = all_jobs()
     existing = next((j for j in jobs if j["id"] == replay_id), None)
-    if existing and existing["status"] != "failed":
+    reusable = existing and existing["status"] != "failed" and not (
+        existing["status"] == "done" and (outdated(existing) or not stored(replay_id)))
+    if reusable:
         ensure_worker(jobs)
         return respond(200, {"job": public(existing)})
     now = int(time.time())
@@ -227,8 +255,9 @@ def submit(event, user):
     if int(info.get("durationMs") or 0) > MAX_MINUTES * 60000:
         return respond(400, {"error": f"replays over {MAX_MINUTES} minutes are not parsed here"})
     players = [p["name"] for team in info.get("AllyTeams") or [] for p in team.get("Players") or []]
+    # a day before the lifecycle rule deletes its file, so a listed job rarely outlives it
     job = {"id": replay_id, "status": "queued", "stage": "waiting for a worker", "pct": 0, "created": now,
-           "expires": now + RETENTION_DAYS * 86400, "uid": user["uid"], "user": user["name"], "attempts": 0,
+           "expires": now + (RETENTION_DAYS - 1) * 86400, "uid": user["uid"], "user": user["name"], "attempts": 0,
            "map": (info.get("Map") or {}).get("scriptName", ""), "duration_ms": int(info.get("durationMs") or 0),
            "players": players[:64], "start_time": info.get("startTime", "")}
     TABLE.put_item(Item=job)
@@ -295,7 +324,11 @@ def watch(replay_id):
     job = TABLE.get_item(Key={"id": replay_id}).get("Item")
     if not job or job["status"] != "done":
         return respond(404, {"error": "that replay is not parsed"})
-    url = signed_url(f"{site()}/curves/{replay_id}.curves", int(time.time()) + LINK_SECONDS)
+    if outdated(job):
+        return respond(409, {"error": "parsed for an older player: queue it again"})
+    if not stored(replay_id):
+        return respond(404, {"error": "that replay's parse has expired: queue it again"})
+    url = signed_url(f"{site()}/{curves_key(replay_id)}", int(time.time()) + LINK_SECONDS)
 
     return respond(200, {"url": url, "link": "barrewind://play?url=" + urllib.parse.quote(url, safe="")})
 

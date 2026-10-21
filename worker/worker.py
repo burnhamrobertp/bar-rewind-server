@@ -2,7 +2,7 @@
 # BAR Rewind parse worker, one Fargate task: claims queued jobs from the jobs table, parses each replay
 # with BAR-Rewind's pipeline, uploads the gzipped .curves to S3 and exits once the queue has stayed
 # empty for IDLE_EXIT seconds. Engines, games and maps stay on the task's disk between its jobs.
-# Env: TABLE, BUCKET, IDLE_EXIT (default 600).
+# Env: TABLE, BUCKET, IDLE_EXIT (default 120).
 #   worker.py --local <replay id>   parse one replay into /work/out, no AWS
 import gzip, json, os, shutil, signal, subprocess, sys, threading, time, urllib.parse, urllib.request
 from pathlib import Path
@@ -168,7 +168,8 @@ class Queue:
                 "ContentEncoding": "gzip", "ContentType": "application/octet-stream",
                 "ContentDisposition": f'attachment; filename="{job_id}.curves"'})
             self.update(job_id, mine, status="done", stage="done", pct=100, finished=int(time.time()),
-                        size=curves.stat().st_size, packed_size=packed.stat().st_size)
+                        size=curves.stat().st_size, packed_size=packed.stat().st_size,
+                        curves_version=pipeline.curves_version(curves))
             curves.unlink()
             packed.unlink()
         except Interrupted:
@@ -192,7 +193,7 @@ def serve():
         raise Interrupted()
     signal.signal(signal.SIGTERM, interrupted)
 
-    idle_exit = int(os.environ.get("IDLE_EXIT", "600"))
+    idle_exit = int(os.environ.get("IDLE_EXIT", "120"))
     idle_since = time.time()
     try:
         while time.time() - idle_since < idle_exit:
