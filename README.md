@@ -9,9 +9,9 @@ Sign-in is Discord, and only members of the BAR Discord holding an allowed role 
 ## How it works
 
 ```
-browser --CloudFront--> /          site/index.html (S3)
-                        /api/*     api/app.py (Lambda): Discord sign-in, jobs, signed download links
-                        /curves/*  parsed replays (S3, signed URLs only)
+browser --CloudFront--> /bar-rewind/          site/index.html (S3)
+                        /bar-rewind/api/*     api/app.py (Lambda): Discord sign-in, jobs, signed download links
+                        /bar-rewind/curves/*  parsed replays (S3, signed URLs only)
 
 POST /api/jobs --> DynamoDB jobs table --> Fargate Spot task (worker/), started when jobs wait
                                            fetches the demo, engine, game and map, runs BAR-Rewind's
@@ -41,14 +41,19 @@ There is no NAT gateway and no always-on instance. A monthly AWS Budgets alarm (
 
 ## Deploy
 
-1. Make a Discord application at https://discord.com/developers/applications and note its client id and
-   secret (OAuth2 page).
-2. With the AWS CLI signed in, Docker running, Zig 0.17 and Python 3 on PATH, and BAR-Rewind checked out
-   next to this repo:
+The site is served at `https://<DOMAIN>/<BASE_PATH>/` (defaults: robotofham.com, bar-rewind); CloudFront
+answers for the whole domain and sends `/` there.
+
+1. Make a Discord application at https://discord.com/developers/applications. Its client id is the
+   template's `DiscordClientId`; put its secret in SSM:
    ```sh
-   DISCORD_CLIENT_ID=<id> DISCORD_CLIENT_SECRET=<secret> ./deploy.sh you@example.com
+   aws ssm put-parameter --name /bar-rewind/discord-client-secret --type SecureString --value <secret>
    ```
-3. Add the redirect URL it prints (`https://<site>/api/callback`) to the Discord application's OAuth2 redirects.
+2. With the AWS CLI signed in, Docker running, Zig 0.17 and Python 3 on PATH, and BAR-Rewind checked out
+   next to this repo, run `./deploy.sh you@example.com`. On the first run it asks for a DNS record that
+   proves the domain to AWS's certificate service, and waits until it is in place.
+3. Point the domain at the CloudFront host it prints (a CNAME, DNS only if Cloudflare manages the domain),
+   and add the redirect URL it prints to the Discord application's OAuth2 redirects.
 
 Run `./deploy.sh you@example.com` again after any change. Allowed roles are the stack's `RoleIds`
 parameter (comma-separated). `./teardown.sh` deletes everything, parsed replays included.

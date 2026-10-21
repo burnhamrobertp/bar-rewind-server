@@ -2,7 +2,7 @@
 # BAR Rewind parse worker, one Fargate task: claims queued jobs from the jobs table, parses each replay
 # with BAR-Rewind's pipeline, uploads the gzipped .curves to S3 and exits once the queue has stayed
 # empty for IDLE_EXIT seconds. Engines, games and maps stay on the task's disk between its jobs.
-# Env: TABLE, BUCKET, IDLE_EXIT (default 600).
+# Env: TABLE, BUCKET, CURVES_PREFIX (the S3 key prefix, default curves/), IDLE_EXIT (default 600).
 #   worker.py --local <replay id>   parse one replay into /work/out, no AWS
 import gzip, json, os, shutil, signal, subprocess, sys, threading, time, urllib.parse, urllib.request
 from pathlib import Path
@@ -164,7 +164,7 @@ class Queue:
             packed = curves.with_suffix(".curves.gz")
             with open(curves, "rb") as src, gzip.open(packed, "wb", 6) as dst:
                 shutil.copyfileobj(src, dst, 1 << 20)
-            self.s3.upload_file(str(packed), self.bucket, f"curves/{job_id}.curves", ExtraArgs={
+            self.s3.upload_file(str(packed), self.bucket, f"{os.environ.get('CURVES_PREFIX', 'curves/')}{job_id}.curves", ExtraArgs={
                 "ContentEncoding": "gzip", "ContentType": "application/octet-stream",
                 "ContentDisposition": f'attachment; filename="{job_id}.curves"'})
             self.update(job_id, mine, status="done", stage="done", pct=100, finished=int(time.time()),

@@ -43,13 +43,13 @@
 <header>
   <h1>BAR Rewind</h1>
   <span class="grow"></span>
-  <a class="button" href="/bar-rewind.exe" title="Plays parsed replays in your BAR install. Run it once; then Watch opens BAR.">Get the player (Windows)</a>
+  <a class="button" href="bar-rewind.exe" title="Plays parsed replays in your BAR install. Run it once; then Watch opens BAR.">Get the player (Windows)</a>
   <span id="who"></span>
 </header>
 <main>
   <div id="signin" class="panel signin" hidden>
     <p>Sign in with the Discord account that holds your BAR moderation role.</p>
-    <a class="button primary" href="/api/login">Sign in with Discord</a>
+    <a class="button primary" href="api/login">Sign in with Discord</a>
     <p class="error" id="signin-error"></p>
   </div>
   <div id="app" hidden>
@@ -114,7 +114,7 @@ function showSignin() {
 
 async function watch(job, download) {
   try {
-    const r = await api(`/api/jobs/${job.id}/watch`);
+    const r = await api(`api/jobs/${job.id}/watch`);
     location.href = download ? r.url : r.link;
   } catch (e) { $("submit-error").textContent = e.message; }
 }
@@ -160,7 +160,7 @@ async function refresh() {
   clearTimeout(timer);
   let busy = false;
   try {
-    const { jobs } = await api("/api/jobs");
+    const { jobs } = await api("api/jobs");
     $("jobs").replaceChildren(...(jobs.length ? jobs.map(row) : [el("tr", {}, el("td", { colspan: 4, class: "note" }, "Nothing queued yet."))]));
     busy = jobs.some(j => j.status === "queued" || j.status === "running");
   } catch (e) {
@@ -173,7 +173,7 @@ async function queue(text) {
   $("submit-error").textContent = "";
   $("queue").disabled = true;
   try {
-    await api("/api/jobs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replay: text }) });
+    await api("api/jobs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replay: text }) });
     $("replay").value = "";
   } catch (e) { $("submit-error").textContent = e.message; }
   $("queue").disabled = false;
@@ -185,8 +185,8 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden && !$
 
 (async () => {
   try {
-    const me = await api("/api/me");
-    $("who").replaceChildren(me.name + " · ", el("a", { href: "/api/logout" }, "sign out"));
+    const me = await api("api/me");
+    $("who").replaceChildren(me.name + " · ", el("a", { href: "api/logout" }, "sign out"));
     $("signin").hidden = true;
     $("app").hidden = false;
     refresh();
