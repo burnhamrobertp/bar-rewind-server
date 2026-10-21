@@ -14,7 +14,10 @@ STACK=${STACK:-bar-rewind}
 DOMAIN=${DOMAIN:-robotofham.com}
 BASE_PATH=${BASE_PATH:-bar-rewind}
 BAR_REWIND=${BAR_REWIND:-../BAR-Rewind}
-PYTHON=${PYTHON:-$(command -v python3 || command -v python)}
+# the first that runs: on Windows python3 can be the Microsoft Store's placeholder
+for candidate in ${PYTHON:-} python3 python; do
+  "$candidate" -c "" 2>/dev/null && PYTHON=$candidate && break
+done
 EMAIL=${1:?usage: deploy.sh <email for cost alerts>}
 mkdir -p .deploy
 
