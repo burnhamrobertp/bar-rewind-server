@@ -17,19 +17,28 @@ PYTHON=${PYTHON:-$(command -v python3 || command -v python)}
 EMAIL=${1:?usage: deploy.sh <email for cost alerts>}
 mkdir -p .deploy
 
-param() { aws ssm get-parameter --name "/$STACK/$1" --with-decryption --query Parameter.Value --output text 2>/dev/null || true; }
+param() { aws ssm get-parameter --name "/$STACK/$1" --with-decryption --query Parameter.Value --output text; }
+# false only when the parameter does not exist; any other failure (an expired sign-in) stops the
+# script rather than passing for a missing secret that then gets regenerated
+has() {
+  local out
+  out=$(aws ssm get-parameter --name "/$STACK/$1" --query Parameter.Name --output text 2>&1) && return 0
+  grep -q ParameterNotFound <<<"$out" && return 1
+  echo "$out" >&2
+  exit 1
+}
 secret() { aws ssm put-parameter --name "/$STACK/$1" --type SecureString --overwrite --value "$2" >/dev/null; }
 output() { aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text; }
 
 echo "== secrets"
-[ -n "$(param session-key)" ] || secret session-key "$(openssl rand -hex 32)"
-[ -n "$(param origin-secret)" ] || secret origin-secret "$(openssl rand -hex 24)"
-[ -n "$(param cloudfront-private-key)" ] || secret cloudfront-private-key "$(openssl genrsa 2048 2>/dev/null)"
+has session-key || secret session-key "$(openssl rand -hex 32)"
+has origin-secret || secret origin-secret "$(openssl rand -hex 24)"
+has cloudfront-private-key || secret cloudfront-private-key "$(openssl genrsa 2048 2>/dev/null)"
 if [ -n "${DISCORD_CLIENT_SECRET:-}" ]; then secret discord-client-secret "$DISCORD_CLIENT_SECRET"
-elif [ -z "$(param discord-client-secret)" ]; then secret discord-client-secret unset; fi
-param cloudfront-private-key > .deploy/key.pem
-PUBLIC_KEY=$(openssl rsa -in .deploy/key.pem -pubout 2>/dev/null)
-rm .deploy/key.pem
+elif ! has discord-client-secret; then secret discord-client-secret unset; fi
+ORIGIN_SECRET=$(param origin-secret)
+PRIVATE_KEY=$(param cloudfront-private-key)
+PUBLIC_KEY=$(openssl rsa -pubout 2>/dev/null <<<"$PRIVATE_KEY")
 
 echo "== certificate for $DOMAIN"
 CERT=$(aws acm list-certificates --certificate-statuses ISSUED PENDING_VALIDATION \
@@ -53,7 +62,7 @@ TAG=$(date -u +%Y%m%d%H%M%S)
 aws cloudformation deploy --stack-name "$STACK" --template-file template.yaml --capabilities CAPABILITY_IAM \
   --no-fail-on-empty-changeset --tags "project=$STACK" --parameter-overrides \
   "SiteDomain=$DOMAIN" "BasePath=$BASE_PATH" "CertificateArn=$CERT" "VpcId=$VPC" "SubnetIds=$SUBNETS" \
-  "CloudFrontPublicKey=$PUBLIC_KEY" "OriginSecret=$(param origin-secret)" "AlertEmail=$EMAIL" "ImageTag=$TAG"
+  "CloudFrontPublicKey=$PUBLIC_KEY" "OriginSecret=$ORIGIN_SECRET" "AlertEmail=$EMAIL" "ImageTag=$TAG"
 BUCKET=$(output BucketName)
 REPO=$(output RepositoryUri)
 aws ssm put-parameter --name "/$STACK/site-url" --type String --overwrite --value "https://$DOMAIN/$BASE_PATH" >/dev/null
