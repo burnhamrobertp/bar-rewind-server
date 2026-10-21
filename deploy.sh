@@ -54,7 +54,13 @@ if [ "$(aws acm describe-certificate --certificate-arn "$CERT" --query Certifica
   echo "Add this DNS record in Cloudflare (DNS only), then wait here:"
   aws acm describe-certificate --certificate-arn "$CERT" \
     --query 'Certificate.DomainValidationOptions[0].ResourceRecord.[Type,Name,Value]' --output text
-  aws acm wait certificate-validated --certificate-arn "$CERT"
+  # ACM can take half an hour to look; the CLI's own waiter gives up sooner
+  for _ in $(seq 180); do
+    STATUS=$(aws acm describe-certificate --certificate-arn "$CERT" --query Certificate.Status --output text)
+    [ "$STATUS" = "PENDING_VALIDATION" ] || break
+    sleep 20
+  done
+  [ "$STATUS" = "ISSUED" ] || { echo "certificate is $STATUS" >&2; exit 1; }
 fi
 
 echo "== stack"
