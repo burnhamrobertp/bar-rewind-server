@@ -19,8 +19,8 @@ new_key() {
   old=$(aws iam list-access-keys --user-name "$user" --query 'AccessKeyMetadata[].AccessKeyId' --output text)
   mkdir -p "$(dirname "$KEYFILE")"
   # straight into the file: the secret is never printed
-  # tr: the Windows CLI ends its lines in , which would end up in the secret
-  aws iam create-access-key --user-name "$user" --query 'AccessKey.[AccessKeyId,SecretAccessKey]' --output text | tr -d '' |
+  # tr: the Windows CLI ends its lines in \r, which would end up in the secret
+  aws iam create-access-key --user-name "$user" --query 'AccessKey.[AccessKeyId,SecretAccessKey]' --output text | tr -d '\r' |
     { read -r id secret; printf '[default]\naws_access_key_id = %s\naws_secret_access_key = %s\n' "$id" "$secret" > "$KEYFILE"; }
   chmod 600 "$KEYFILE"
   for k in $old; do aws iam delete-access-key --user-name "$user" --access-key-id "$k"; done
