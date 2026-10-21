@@ -2,11 +2,12 @@
 # Deploys or updates the BAR Rewind server at https://$DOMAIN/$BASE_PATH/: ./deploy.sh <email for cost alerts>
 # Needs the AWS CLI, Docker, OpenSSL, Python 3, Zig 0.17 on PATH and a BAR-Rewind checkout at $BAR_REWIND
 # (default ../BAR-Rewind). The Discord client secret goes in SSM as /$STACK/discord-client-secret
-# (SecureString) before the first sign-in; DISCORD_CLIENT_SECRET sets it here instead. AWS_PROFILE defaults
-# to "personal", AWS_REGION to us-east-1 (CloudFront certificates must be there).
+# (SecureString) before the first sign-in; DISCORD_CLIENT_SECRET sets it here instead. DEPLOY_PROFILE picks
+# the AWS profile (default "personal"; a shell's own AWS_PROFILE is ignored), AWS_REGION defaults to us-east-1
+# (CloudFront certificates must be there).
 set -euo pipefail
 cd "$(dirname "$0")"
-export AWS_PROFILE=${AWS_PROFILE:-personal} AWS_REGION=${AWS_REGION:-us-east-1}
+export AWS_PROFILE=${DEPLOY_PROFILE:-personal} AWS_REGION=${AWS_REGION:-us-east-1}
 # Git Bash would rewrite /bar-rewind/... arguments into Windows paths
 export MSYS_NO_PATHCONV=1
 STACK=${STACK:-bar-rewind}
@@ -30,6 +31,7 @@ has() {
 secret() { aws ssm put-parameter --name "/$STACK/$1" --type SecureString --overwrite --value "$2" >/dev/null; }
 output() { aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text; }
 
+echo "== AWS account $(aws sts get-caller-identity --query Account --output text) (profile $AWS_PROFILE)"
 echo "== secrets"
 has session-key || secret session-key "$(openssl rand -hex 32)"
 has origin-secret || secret origin-secret "$(openssl rand -hex 24)"
