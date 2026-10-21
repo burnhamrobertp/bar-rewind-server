@@ -4,8 +4,7 @@
 #   GET  /api/jobs                   every job, newest first
 #   POST /api/jobs {"replay": ...}   queue a replay (a bar-rts.com link or its id) and start a worker
 #   GET  /api/jobs/<id>/watch        a signed download URL for a parsed replay, and its barrewind:// link
-# Paths are under BASE (e.g. /bar-rewind) on the site. Settings live in SSM under PARAMS (see deploy.sh); the
-# rest comes from the template's environment.
+# Settings live in SSM under PARAMS (see deploy.sh); the rest comes from the template's environment.
 import base64, hashlib, hmac, json, os, re, secrets, time, urllib.error, urllib.parse, urllib.request
 
 import boto3
@@ -23,7 +22,6 @@ DAILY_LIMIT = int(os.environ.get("DAILY_LIMIT", "30"))
 QUEUE_LIMIT = int(os.environ.get("QUEUE_LIMIT", "50"))
 MAX_MINUTES = int(os.environ.get("MAX_MINUTES", "150"))
 RETENTION_DAYS = int(os.environ.get("RETENTION_DAYS", "60"))
-BASE = os.environ.get("BASE", "")
 REPLAY_ID = re.compile(r"\b([0-9a-f]{32})\b")
 
 _params = None
@@ -56,7 +54,7 @@ def redirect(location, cookies=()):
 
 
 def cookie(name, value, max_age):
-    return f"{name}={value}; Path={BASE}/api; Max-Age={max_age}; HttpOnly; Secure; SameSite=Lax"
+    return f"{name}={value}; Path=/api; Max-Age={max_age}; HttpOnly; Secure; SameSite=Lax"
 
 
 # sessions: base64(json) + "." + HMAC, in an HttpOnly cookie --------------------------------------
@@ -135,21 +133,21 @@ def login(event):
 def callback(event):
     q = event.get("queryStringParameters") or {}
     if not q.get("code") or not hmac.compare_digest(q.get("state", ""), cookies_of(event).get("st", "")):
-        return redirect(BASE + "/?signin=failed")
+        return redirect("/?signin=failed")
     form = urllib.parse.urlencode({"client_id": params()["discord-client-id"], "client_secret": params()["discord-client-secret"],
                                    "grant_type": "authorization_code", "code": q["code"],
                                    "redirect_uri": site() + "/api/callback"}).encode()
     status, token = http(f"{DISCORD}/oauth2/token", form, {"Content-Type": "application/x-www-form-urlencoded"})
     if status != 200:
-        return redirect(BASE + "/?signin=failed")
+        return redirect("/?signin=failed")
     roles, member = member_roles(token["access_token"])
     if not allowed(roles):
-        return redirect(BASE + "/?signin=denied", [cookie("st", "", 0)])
+        return redirect("/?signin=denied", [cookie("st", "", 0)])
     user = member["user"]
     payload = {"uid": user["id"], "name": member.get("nick") or user.get("global_name") or user["username"],
                "tok": token["access_token"], "exp": int(time.time()) + min(SESSION_SECONDS, int(token.get("expires_in", SESSION_SECONDS)))}
 
-    return redirect(BASE + "/", [cookie("st", "", 0), cookie("s", sign(payload), SESSION_SECONDS)])
+    return redirect("/", [cookie("st", "", 0), cookie("s", sign(payload), SESSION_SECONDS)])
 
 
 # jobs ----------------------------------------------------------------------------------------------
@@ -308,7 +306,7 @@ def handler(event, context):
     if not hmac.compare_digest(event.get("headers", {}).get("x-origin-secret", ""), params()["origin-secret"]):
         return respond(403, {"error": "forbidden"})
     method = event["requestContext"]["http"]["method"]
-    path = event.get("rawPath", "").removeprefix(BASE)
+    path = event.get("rawPath", "")
     if path == "/api/login":
         return login(event)
     if path == "/api/callback":
@@ -320,7 +318,7 @@ def handler(event, context):
     if path == "/api/me":
         return respond(200, {"name": user["name"]})
     if path == "/api/logout":
-        return redirect(BASE + "/", [cookie("s", "", 0)])
+        return redirect("/", [cookie("s", "", 0)])
     if path == "/api/jobs" and method == "GET":
         return list_jobs(user)
     if path == "/api/jobs" and method == "POST":

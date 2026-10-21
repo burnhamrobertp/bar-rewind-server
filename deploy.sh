@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploys or updates the BAR Rewind server at https://$DOMAIN/$BASE_PATH/: ./deploy.sh <email for cost alerts>
+# Deploys or updates the BAR Rewind server at https://$DOMAIN: ./deploy.sh <email for cost alerts>
 # Needs the AWS CLI, Docker, OpenSSL, Python 3, Zig 0.17 on PATH and a BAR-Rewind checkout at $BAR_REWIND
 # (default ../BAR-Rewind). The Discord client secret goes in SSM as /$STACK/discord-client-secret
 # (SecureString) before the first sign-in; DISCORD_CLIENT_SECRET sets it here instead. DEPLOY_PROFILE picks
@@ -11,8 +11,7 @@ export AWS_PROFILE=${DEPLOY_PROFILE:-personal} AWS_REGION=${AWS_REGION:-us-east-
 # Git Bash would rewrite /bar-rewind/... arguments into Windows paths
 export MSYS_NO_PATHCONV=1
 STACK=${STACK:-bar-rewind}
-DOMAIN=${DOMAIN:-robotofham.com}
-BASE_PATH=${BASE_PATH:-bar-rewind}
+DOMAIN=${DOMAIN:-bar-rewind.robotofham.com}
 BAR_REWIND=${BAR_REWIND:-../BAR-Rewind}
 # the first that runs: on Windows python3 can be the Microsoft Store's placeholder
 for candidate in ${PYTHON:-} python3 python; do
@@ -80,11 +79,11 @@ SUBNETS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC" Name=defa
 TAG=$(date -u +%Y%m%d%H%M%S)
 aws cloudformation deploy --stack-name "$STACK" --template-file template.yaml --capabilities CAPABILITY_IAM \
   --no-fail-on-empty-changeset --tags "project=$STACK" --parameter-overrides \
-  "SiteDomain=$DOMAIN" "BasePath=$BASE_PATH" "CertificateArn=$CERT" "VpcId=$VPC" "SubnetIds=$SUBNETS" \
+  "SiteDomain=$DOMAIN" "CertificateArn=$CERT" "VpcId=$VPC" "SubnetIds=$SUBNETS" \
   "CloudFrontPublicKey=$PUBLIC_KEY" "OriginSecret=$ORIGIN_SECRET" "AlertEmail=$EMAIL" "ImageTag=$TAG"
 BUCKET=$(output BucketName)
 REPO=$(output RepositoryUri)
-aws ssm put-parameter --name "/$STACK/site-url" --type String --overwrite --value "https://$DOMAIN/$BASE_PATH" >/dev/null
+aws ssm put-parameter --name "/$STACK/site-url" --type String --overwrite --value "https://$DOMAIN" >/dev/null
 
 echo "== BAR-Rewind (the player for $DOMAIN, the Linux package for the worker)"
 (cd "$BAR_REWIND" && SERVER_HOST=$DOMAIN "$PYTHON" tools/dist.py)
@@ -102,10 +101,9 @@ aws lambda update-function-code --function-name "$(output ApiFunction)" --zip-fi
 aws lambda wait function-updated --function-name "$(output ApiFunction)"
 
 echo "== site"
-# the parsed replays share the prefix: --delete must not reach them
-aws s3 sync site/ "s3://$BUCKET/$BASE_PATH/" --delete --exclude "curves/*" >/dev/null
+aws s3 sync site/ "s3://$BUCKET/site/" --delete >/dev/null
 
 echo
-echo "https://$DOMAIN/$BASE_PATH/"
-echo "Cloudflare: $DOMAIN CNAME $(output CloudFrontHost), DNS only (replacing the old A/AAAA records)"
-echo "Discord OAuth2 redirect: https://$DOMAIN/$BASE_PATH/api/callback"
+echo "https://$DOMAIN/"
+echo "Cloudflare: $DOMAIN CNAME $(output CloudFrontHost), DNS only"
+echo "Discord OAuth2 redirect: https://$DOMAIN/api/callback"

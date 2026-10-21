@@ -4,11 +4,7 @@ Description: BAR Rewind server - queue BAR replays, parse them on Fargate Spot, 
 Parameters:
   SiteDomain:
     Type: String
-    Default: robotofham.com
-  BasePath:
-    Type: String
-    Default: bar-rewind
-    Description: The site lives at https://<SiteDomain>/<BasePath>/; / redirects there
+    Default: bar-rewind.robotofham.com
   CertificateArn:
     Type: String
     Description: ACM certificate (us-east-1) for SiteDomain
@@ -69,7 +65,7 @@ Resources:
         Rules:
           - Id: expire-curves
             Status: Enabled
-            Prefix: !Sub "${BasePath}/curves/"
+            Prefix: curves/
             ExpirationInDays: !Ref RetentionDays
           - Id: expire-logs
             Status: Enabled
@@ -88,7 +84,9 @@ Resources:
           - Effect: Allow
             Principal: { Service: cloudfront.amazonaws.com }
             Action: s3:GetObject
-            Resource: !Sub "${Bucket.Arn}/${BasePath}/*"
+            Resource:
+              - !Sub "${Bucket.Arn}/site/*"
+              - !Sub "${Bucket.Arn}/curves/*"
             Condition:
               StringEquals:
                 AWS:SourceArn: !Sub "arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${Distribution}"
@@ -150,7 +148,7 @@ Resources:
                 Resource: !GetAtt Jobs.Arn
               - Effect: Allow
                 Action: s3:PutObject
-                Resource: [!Sub "${Bucket.Arn}/${BasePath}/curves/*", !Sub "${Bucket.Arn}/logs/*"]
+                Resource: [!Sub "${Bucket.Arn}/curves/*", !Sub "${Bucket.Arn}/logs/*"]
 
   WorkerTask:
     Type: AWS::ECS::TaskDefinition
@@ -172,7 +170,6 @@ Resources:
           Environment:
             - { Name: TABLE, Value: !Ref Jobs }
             - { Name: BUCKET, Value: !Ref Bucket }
-            - { Name: CURVES_PREFIX, Value: !Sub "${BasePath}/curves/" }
           LogConfiguration:
             LogDriver: awslogs
             Options:
@@ -244,7 +241,6 @@ Resources:
       Environment:
         Variables:
           TABLE: !Ref Jobs
-          BASE: !Sub "/${BasePath}"
           PARAMS: !Sub "/${AWS::StackName}"
           CLUSTER: !Ref Cluster
           TASK_FAMILY: !Sub "${AWS::StackName}-worker"
@@ -296,23 +292,6 @@ Resources:
         SigningBehavior: always
         SigningProtocol: sigv4
 
-  # / and /<BasePath> redirect to /<BasePath>/, which serves its index.html
-  SitePaths:
-    Type: AWS::CloudFront::Function
-    Properties:
-      Name: !Sub "${AWS::StackName}-site-paths"
-      AutoPublish: true
-      FunctionConfig: { Comment: BAR Rewind index and redirects, Runtime: cloudfront-js-2.0 }
-      FunctionCode: !Sub |
-        function handler(event) {
-          var request = event.request, base = "/${BasePath}";
-          if (request.uri === "/" || request.uri === base) {
-            return { statusCode: 301, statusDescription: "Moved Permanently", headers: { location: { value: base + "/" } } };
-          }
-          if (request.uri === base + "/") request.uri = base + "/index.html";
-          return request;
-        }
-
   Distribution:
     Type: AWS::CloudFront::Distribution
     Properties:
@@ -321,12 +300,18 @@ Resources:
         Comment: BAR Rewind
         PriceClass: PriceClass_100
         HttpVersion: http2and3
+        DefaultRootObject: index.html
         Aliases: [!Ref SiteDomain]
         ViewerCertificate:
           AcmCertificateArn: !Ref CertificateArn
           SslSupportMethod: sni-only
           MinimumProtocolVersion: TLSv1.2_2021
         Origins:
+          - Id: site
+            DomainName: !GetAtt Bucket.RegionalDomainName
+            OriginPath: /site
+            OriginAccessControlId: !Ref BucketAccess
+            S3OriginConfig: { OriginAccessIdentity: "" }
           - Id: bucket
             DomainName: !GetAtt Bucket.RegionalDomainName
             OriginAccessControlId: !Ref BucketAccess
@@ -337,19 +322,18 @@ Resources:
             OriginCustomHeaders: [{ HeaderName: X-Origin-Secret, HeaderValue: !Ref OriginSecret }]
         # managed policies: CachingDisabled, CachingOptimized, AllViewerExceptHostHeader
         DefaultCacheBehavior:
-          TargetOriginId: bucket
+          TargetOriginId: site
           ViewerProtocolPolicy: redirect-to-https
           CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
           Compress: true
-          FunctionAssociations: [{ EventType: viewer-request, FunctionARN: !GetAtt SitePaths.FunctionMetadata.FunctionARN }]
         CacheBehaviors:
-          - PathPattern: !Sub "/${BasePath}/api/*"
+          - PathPattern: /api/*
             TargetOriginId: api
             ViewerProtocolPolicy: https-only
             AllowedMethods: [GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE]
             CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
             OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
-          - PathPattern: !Sub "/${BasePath}/curves/*"
+          - PathPattern: /curves/*
             TargetOriginId: bucket
             ViewerProtocolPolicy: https-only
             CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
@@ -375,7 +359,7 @@ Resources:
 
 Outputs:
   SiteUrl:
-    Value: !Sub "https://${SiteDomain}/${BasePath}"
+    Value: !Sub "https://${SiteDomain}"
   CloudFrontHost:
     Value: !GetAtt Distribution.DomainName
   BucketName:

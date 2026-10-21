@@ -9,9 +9,9 @@ Sign-in is Discord, and only members of the BAR Discord holding an allowed role 
 ## How it works
 
 ```
-browser --CloudFront--> /bar-rewind/          site/index.html (S3)
-                        /bar-rewind/api/*     api/app.py (Lambda): Discord sign-in, jobs, signed download links
-                        /bar-rewind/curves/*  parsed replays (S3, signed URLs only)
+browser --CloudFront--> /          site/index.html (S3)
+                        /api/*     api/app.py (Lambda): Discord sign-in, jobs, signed download links
+                        /curves/*  parsed replays (S3, signed URLs only)
 
 POST /api/jobs --> DynamoDB jobs table --> Fargate Spot task (worker/), started when jobs wait
                                            fetches the demo, engine, game and map, runs BAR-Rewind's
@@ -41,8 +41,7 @@ There is no NAT gateway and no always-on instance. A monthly AWS Budgets alarm (
 
 ## Deploy
 
-The site is served at `https://<DOMAIN>/<BASE_PATH>/` (defaults: robotofham.com, bar-rewind); CloudFront
-answers for the whole domain and sends `/` there.
+The site is served at `https://$DOMAIN/` (default bar-rewind.robotofham.com), a host of its own.
 
 1. Make a Discord application at https://discord.com/developers/applications. Its client id is the
    template's `DiscordClientId`; put its secret in SSM:
@@ -52,7 +51,7 @@ answers for the whole domain and sends `/` there.
 2. With the AWS CLI signed in, Docker running, Zig 0.17 and Python 3 on PATH, and BAR-Rewind checked out
    next to this repo, run `./deploy.sh you@example.com`. On the first run it asks for a DNS record that
    proves the domain to AWS's certificate service, and waits until it is in place.
-3. Point the domain at the CloudFront host it prints (a CNAME, DNS only if Cloudflare manages the domain),
+3. Point the host at the CloudFront host it prints (a CNAME, DNS only if Cloudflare manages the domain),
    and add the redirect URL it prints to the Discord application's OAuth2 redirects.
 
 Run `./deploy.sh you@example.com` again after any change. Allowed roles are the stack's `RoleIds`
