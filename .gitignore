@@ -1,0 +1,4 @@
+worker/bar-rewind-linux.tar.gz
+site/bar-rewind.exe
+.deploy/
+__pycache__/
