@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BAR Rewind</title>
+<style>
+  :root {
+    --bg: #101214; --panel: #181b1f; --line: #2a2f36; --text: #e6e8eb; --dim: #9aa3ad;
+    --accent: #5aa9ff; --ok: #4cc38a; --warn: #f0b429; --bad: #ef5b5b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, sans-serif; }
+  header { display: flex; align-items: center; gap: 16px; padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
+  header h1 { font-size: 18px; margin: 0; letter-spacing: .02em; }
+  header .grow { flex: 1; }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 60px; }
+  a { color: var(--accent); }
+  button, .button { background: #23272d; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 7px 12px; font: inherit; cursor: pointer; text-decoration: none; display: inline-block; }
+  button:hover, .button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #08121f; font-weight: 600; }
+  button:disabled { opacity: .5; cursor: default; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  form { display: flex; gap: 8px; flex-wrap: wrap; }
+  input[type=text] { flex: 1; min-width: 240px; background: #0c0e10; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font: inherit; }
+  .note { color: var(--dim); font-size: 13px; margin: 8px 0 0; }
+  .error { color: var(--bad); margin: 8px 0 0; min-height: 1em; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--dim); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+  td.actions { white-space: nowrap; text-align: right; }
+  .players { color: var(--dim); font-size: 12px; max-width: 320px; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: 12px; border: 1px solid; }
+  .queued { color: var(--dim); } .running { color: var(--accent); } .done { color: var(--ok); } .failed { color: var(--bad); } .stalled { color: var(--warn); }
+  .bar { height: 6px; background: #0c0e10; border-radius: 3px; margin-top: 6px; overflow: hidden; width: 180px; }
+  .bar > div { height: 100%; background: var(--accent); transition: width .5s; }
+  .stage { font-size: 12px; color: var(--dim); margin-top: 3px; max-width: 280px; }
+  .signin { text-align: center; padding: 40px 16px; }
+  @media (max-width: 720px) { .hide-narrow { display: none; } td, th { padding: 8px 4px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>BAR Rewind</h1>
+  <span class="grow"></span>
+  <a class="button" href="/bar-rewind.exe" title="Plays parsed replays in your BAR install. Run it once; then Watch opens BAR.">Get the player (Windows)</a>
+  <span id="who"></span>
+</header>
+<main>
+  <div id="signin" class="panel signin" hidden>
+    <p>Sign in with the Discord account that holds your BAR moderation role.</p>
+    <a class="button primary" href="/api/login">Sign in with Discord</a>
+    <p class="error" id="signin-error"></p>
+  </div>
+  <div id="app" hidden>
+    <div class="panel">
+      <form id="submit">
+        <input type="text" id="replay" placeholder="https://www.bar-rts.com/replays/... or the replay id" autocomplete="off">
+        <button class="primary" id="queue">Queue</button>
+      </form>
+      <p class="error" id="submit-error"></p>
+      <p class="note">Parsing takes a few minutes per replay, longer for big team games. Parsed replays are kept for 60 days.
+        Watch needs BAR and the player installed.</p>
+    </div>
+    <div class="panel">
+      <table>
+        <thead><tr><th>Replay</th><th class="hide-narrow">Queued</th><th>Status</th><th></th></tr></thead>
+        <tbody id="jobs"><tr><td colspan="4" class="note">Loading...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const STALLED_AFTER = 180;
+let timer = null;
+
+function ago(t) {
+  const s = Math.max(0, Math.round(Date.now() / 1000 - t));
+  if (s < 60) return s + "s ago";
+  if (s < 3600) return Math.floor(s / 60) + "m ago";
+  if (s < 86400) return Math.floor(s / 3600) + "h ago";
+  return Math.floor(s / 86400) + "d ago";
+}
+
+function clock(ms) {
+  const s = Math.round(ms / 1000);
+  return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+}
+
+function el(tag, attrs = {}, ...children) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) k === "class" ? e.className = v : e.setAttribute(k, v);
+  for (const c of children) if (c != null) e.append(c);
+  return e;
+}
+
+async function api(path, options) {
+  const r = await fetch(path, { credentials: "same-origin", ...options });
+  const body = await r.json().catch(() => ({}));
+  if (r.status === 401) { showSignin(); throw new Error(body.error || "sign in"); }
+  if (!r.ok) throw new Error(body.error || r.statusText);
+  return body;
+}
+
+function showSignin() {
+  $("app").hidden = true;
+  $("signin").hidden = false;
+  $("who").textContent = "";
+  const reason = new URLSearchParams(location.search).get("signin");
+  $("signin-error").textContent = reason === "denied" ? "That Discord account doesn't have a role that's allowed in."
+    : reason === "failed" ? "Discord sign-in didn't complete. Try again." : "";
+}
+
+async function watch(job, download) {
+  try {
+    const r = await api(`/api/jobs/${job.id}/watch`);
+    location.href = download ? r.url : r.link;
+  } catch (e) { $("submit-error").textContent = e.message; }
+}
+
+function statusCell(job) {
+  const now = Date.now() / 1000;
+  const stalled = job.status === "running" && (now - (job.progress_at || job.started) > STALLED_AFTER || now - job.heartbeat > STALLED_AFTER);
+  const cell = el("td");
+  const label = stalled ? "no progress for " + ago(job.progress_at || job.started).replace(" ago", "") : job.status;
+  cell.append(el("span", { class: "badge " + (stalled ? "stalled" : job.status) }, label));
+  if (job.status === "running" || job.status === "queued") {
+    if (job.status === "running") cell.append(el("div", { class: "bar" }, el("div", { style: `width:${job.pct || 0}%` })));
+    cell.append(el("div", { class: "stage" }, job.stage || ""));
+  } else if (job.status === "failed") {
+    cell.append(el("div", { class: "stage", title: job.error || "" }, (job.error || "").split("\n")[0].slice(0, 160)));
+  } else if (job.status === "done") {
+    cell.append(el("div", { class: "stage" }, `${Math.round((job.packed_size || 0) / 1048576)} MB download, parsed ${ago(job.finished)}`));
+  }
+  return cell;
+}
+
+function row(job) {
+  const title = el("div", {}, el("a", { href: "https://www.bar-rts.com/replays/" + job.id, target: "_blank", rel: "noopener" }, job.map || job.id),
+    job.duration_ms ? " · " + clock(job.duration_ms) : "");
+  const players = el("div", { class: "players" }, (job.players || []).join(", "));
+  const actions = el("td", { class: "actions" });
+  if (job.status === "done") {
+    const w = el("button", { class: "primary", title: "Opens BAR on this replay (needs the player)" }, "Watch");
+    w.onclick = () => watch(job, false);
+    const d = el("button", { title: "Save the .curves file" }, "Download");
+    d.onclick = () => watch(job, true);
+    actions.append(w, " ", d);
+  } else if (job.status === "failed") {
+    const r = el("button", { title: "Queue it again" }, "Retry");
+    r.onclick = () => queue(job.id);
+    actions.append(r);
+  }
+  return el("tr", {}, el("td", {}, title, players), el("td", { class: "hide-narrow" }, job.user || "", el("div", { class: "stage" }, ago(job.created))),
+    statusCell(job), actions);
+}
+
+async function refresh() {
+  clearTimeout(timer);
+  let busy = false;
+  try {
+    const { jobs } = await api("/api/jobs");
+    $("jobs").replaceChildren(...(jobs.length ? jobs.map(row) : [el("tr", {}, el("td", { colspan: 4, class: "note" }, "Nothing queued yet."))]));
+    busy = jobs.some(j => j.status === "queued" || j.status === "running");
+  } catch (e) {
+    if ($("app").hidden) return;
+  }
+  timer = setTimeout(refresh, document.hidden ? 60000 : busy ? 5000 : 30000);
+}
+
+async function queue(text) {
+  $("submit-error").textContent = "";
+  $("queue").disabled = true;
+  try {
+    await api("/api/jobs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replay: text }) });
+    $("replay").value = "";
+  } catch (e) { $("submit-error").textContent = e.message; }
+  $("queue").disabled = false;
+  refresh();
+}
+
+$("submit").onsubmit = e => { e.preventDefault(); if ($("replay").value.trim()) queue($("replay").value.trim()); };
+document.addEventListener("visibilitychange", () => { if (!document.hidden && !$("app").hidden) refresh(); });
+
+(async () => {
+  try {
+    const me = await api("/api/me");
+    $("who").replaceChildren(me.name + " · ", el("a", { href: "/api/logout" }, "sign out"));
+    $("signin").hidden = true;
+    $("app").hidden = false;
+    refresh();
+  } catch (e) { showSignin(); }
+})();
+</script>
+</body>
+</html>
