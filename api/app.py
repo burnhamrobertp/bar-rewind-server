@@ -4,6 +4,7 @@
 #   GET  /api/jobs                   every job, newest first
 #   POST /api/jobs {"replay": ...}   queue a replay (a bar-rts.com link or its id) and start a worker
 #   GET  /api/jobs/<id>/watch        a signed download URL for a parsed replay, and its barrewind:// link
+#   GET  /api/jobs/<id>/log          the latest attempt's log, as text
 # Settings live in SSM under PARAMS (see deploy.sh); the rest comes from the template's environment.
 import base64, hashlib, hmac, json, os, re, secrets, time, urllib.error, urllib.parse, urllib.request
 
@@ -193,7 +194,25 @@ def stored(replay_id):
 def public(job):
     fields = {k: (int(v) if hasattr(v, "as_integer_ratio") and not isinstance(v, bool) else v) for k, v in job.items() if k in PUBLIC}
 
-    return {**fields, "outdated": outdated(job)}
+    return {**fields, "outdated": outdated(job), "has_log": bool(job.get("log"))}
+
+
+LOG_TAIL = 256 * 1024
+
+
+def job_log(replay_id):
+    """The latest attempt's log as plain text: its head (the worker's account of the job) and, when
+    longer, the end of the engine's output, which is where a failure shows"""
+    job = TABLE.get_item(Key={"id": replay_id}).get("Item")
+    if not job or not job.get("log"):
+        return respond(404, {"error": "no log for that replay yet"})
+    obj = S3.get_object(Bucket=os.environ["BUCKET"], Key=job["log"])
+    data = obj["Body"].read()
+    if len(data) > 2 * LOG_TAIL:
+        data = data[:LOG_TAIL // 4] + b"\n\n[... %d bytes left out ...]\n\n" % (len(data) - LOG_TAIL - LOG_TAIL // 4) + data[-LOG_TAIL:]
+
+    return {"statusCode": 200, "headers": {"content-type": "text/plain; charset=utf-8", "cache-control": "no-store"},
+            "body": data.decode(errors="replace")}
 
 
 def ensure_worker(jobs):
@@ -356,8 +375,8 @@ def handler(event, context):
         return list_jobs(user)
     if path == "/api/jobs" and method == "POST":
         return submit(event, user)
-    m = re.fullmatch(r"/api/jobs/([0-9a-f]{32})/watch", path)
+    m = re.fullmatch(r"/api/jobs/([0-9a-f]{32})/(watch|log)", path)
     if m and method == "GET":
-        return watch(m.group(1))
+        return watch(m.group(1)) if m.group(2) == "watch" else job_log(m.group(1))
 
     return respond(404, {"error": "no such endpoint"})

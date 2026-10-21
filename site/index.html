@@ -125,6 +125,10 @@ function row(job) {
     r.onclick = () => queue(job.id);
     actions.append(r);
   }
+  if (job.has_log && job.status !== "queued" && job.status !== "running") {
+    actions.append(" ", el("a", { class: "button", href: `api/jobs/${job.id}/log`, target: "_blank", rel: "noopener",
+      title: "What the worker, the engine and bake reported, for the latest try" }, "Log"));
+  }
   return el("tr", {}, el("td", {}, title, players), el("td", { class: "hide-narrow" }, job.user || "", el("div", { class: "stage" }, ago(job.created))),
     statusCell(job), actions);
 }

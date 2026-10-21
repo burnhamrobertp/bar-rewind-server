@@ -44,7 +44,8 @@ Parameters:
     Default: "2048"
   WorkerMemory:
     Type: String
-    Default: "8192"
+    Default: "16384"
+    Description: bake holds a match's whole recording in memory; a 39-minute team game's bake was killed at 8 GB
   ImageTag:
     Type: String
     Default: latest
@@ -210,7 +211,7 @@ Resources:
               # HeadObject on a missing key answers 403 instead of 404 without ListBucket
               - Effect: Allow
                 Action: s3:GetObject
-                Resource: !Sub "${Bucket.Arn}/curves/*"
+                Resource: [!Sub "${Bucket.Arn}/curves/*", !Sub "${Bucket.Arn}/logs/*"]
               - Effect: Allow
                 Action: s3:ListBucket
                 Resource: !GetAtt Bucket.Arn

@@ -4,7 +4,7 @@
 # empty for IDLE_EXIT seconds. Engines, games and maps stay on the task's disk between its jobs.
 # Env: TABLE, BUCKET, IDLE_EXIT (default 120).
 #   worker.py --local <replay id>   parse one replay into /work/out, no AWS
-import gzip, json, os, shutil, signal, subprocess, sys, threading, time, urllib.parse, urllib.request
+import gzip, json, os, shutil, signal, subprocess, sys, threading, time, traceback, urllib.parse, urllib.request
 from pathlib import Path
 
 sys.path.insert(0, "/opt/bar-rewind/tools")
@@ -132,10 +132,11 @@ class Queue:
     def claim(self):
         for job in sorted(self.jobs("queued"), key=lambda j: j["created"]):
             now = int(time.time())
+            attempt = int(job.get("attempts", 0)) + 1
             if self.update(job["id"], ("#status = :queued", {"#status": "status"}, {":queued": "queued"}),
                            status="running", worker=self.task, started=now, heartbeat=now, progress_at=now,
-                           attempts=int(job.get("attempts", 0)) + 1, stage="starting", pct=0):
-                return job
+                           attempts=attempt, stage="starting", pct=0):
+                return {**job, "attempts": attempt, "started": now}
 
         return None
 
@@ -150,13 +151,18 @@ class Queue:
         threading.Thread(target=beat, daemon=True).start()
 
         last = {"stage": None, "at": 0}
+        stages = []
 
         def report(stage, pct):
             now = time.time()
+            if stage != last["stage"]:
+                stages.append(f"{time.strftime('%H:%M:%S', time.gmtime(now))} {stage}")
             if stage == last["stage"] and now - last["at"] < PROGRESS_EVERY:
                 return
             last.update(stage=stage, at=now)
             self.update(job_id, mine, stage=stage, pct=max(int(pct), 0), progress_at=int(now))
+
+        outcome = "done"
 
         try:
             curves = process(job_id, report)
@@ -173,16 +179,29 @@ class Queue:
             curves.unlink()
             packed.unlink()
         except Interrupted:
+            outcome = "stopped by ECS"
             self.update(job_id, mine, status="queued", stage="waiting for a worker (the last one was stopped)")
             raise
         except Exception as e:
+            outcome = "failed\n\n" + traceback.format_exc()
             self.update(job_id, mine, status="failed", stage="failed", error=str(e)[:2000], finished=int(time.time()))
         finally:
             stop.set()
-            log = WORK / "out" / "curves" / "dump.log"
-            if log.exists():
-                self.s3.upload_file(str(log), self.bucket, f"logs/{job_id}.log", ExtraArgs={"ContentType": "text/plain"})
-                log.unlink()
+            self.save_log(job, stages, outcome)
+
+    def save_log(self, job, stages, outcome):
+        """One log per attempt (logs/<id>/<start time>-<attempt>.log): this worker's account of the job,
+        then the engine's and bake's output if the parse got that far. The job keeps the latest one's key."""
+        started = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(int(job["started"])))
+        key = f"logs/{job['id']}/{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime(int(job['started'])))}-{job['attempts']}.log"
+        text = (f"replay {job['id']}, attempt {job['attempts']}, worker {self.task}\nstarted {started} UTC\n\n"
+                + "\n".join(stages) + f"\n\n{outcome}\n")
+        dump = WORK / "out" / "curves" / "dump.log"
+        if dump.exists():
+            text += "\n---- engine and bake output ----\n" + dump.read_text(errors="replace")
+            dump.unlink()
+        self.s3.put_object(Bucket=self.bucket, Key=key, Body=text.encode(), ContentType="text/plain; charset=utf-8")
+        self.update(job["id"], ("#worker = :me", {"#worker": "worker"}, {":me": self.task}), log=key)
 
 
 def serve():
