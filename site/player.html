@@ -35,6 +35,8 @@
       <li>A window confirms it's set up and shows the BAR data folder it found. Press Enter to close it.</li>
       <li>Click Watch on a parsed replay. The first time, the browser asks to open BAR Rewind: allow it
         (and tick "always allow" to skip the question next time).</li>
+      <li>The player then asks whether to trust downloads from this site. Type <code>y</code> and Enter; it
+        remembers, and won't ask again for this site.</li>
     </ol>
     <p class="note">To remove it: run <code>bar-rewind.exe --uninstall</code> from a terminal, then delete the file.</p>
   </div>
@@ -48,7 +50,8 @@
       <li>Run it once in a terminal: <code>~/.local/bin/bar-rewind</code>. It registers itself for your user
         (a desktop entry in <code>~/.local/share/applications</code>); it needs <code>xdg-utils</code>, which most
         desktops have.</li>
-      <li>Click Watch on a parsed replay. The player opens in a terminal window, so downloads and errors show there.</li>
+      <li>Click Watch on a parsed replay. The player opens in a terminal window, so downloads and errors show there.
+        The first time, it asks whether to trust downloads from this site: type <code>y</code> and Enter.</li>
     </ol>
     <p class="note">To remove it: <code>~/.local/bin/bar-rewind --uninstall</code>, then delete the file.</p>
   </div>
@@ -58,7 +61,8 @@
     <p>The player looks where BAR's installers put its data folder (the one with <code>engine/</code>,
       <code>maps/</code> and <code>demos/</code> in it). For anywhere else, put
       <code>{"bar_data": "&lt;BAR's data folder&gt;"}</code> in <code>%APPDATA%\bar-rewind.json</code> (Windows) or
-      <code>~/.config/bar-rewind.json</code> (Linux). Downloaded replays and BAR's log from the last Watch are in
+      <code>~/.config/bar-rewind.json</code> (Linux). The same file lists the sites you trusted
+      (<code>trusted_hosts</code>); remove one there to be asked again. Downloaded replays and BAR's log from the last Watch are in
       <code>%LOCALAPPDATA%\bar-rewind</code> or <code>~/.cache/bar-rewind</code>.</p>
   </div>
 </main>

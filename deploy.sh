@@ -87,8 +87,8 @@ BUCKET=$(output BucketName)
 REPO=$(output RepositoryUri)
 aws ssm put-parameter --name "/$STACK/site-url" --type String --overwrite --value "https://$DOMAIN" >/dev/null
 
-echo "== BAR-Rewind (the player for $DOMAIN, the Linux package for the worker)"
-(cd "$BAR_REWIND" && SERVER_HOST=$DOMAIN "$PYTHON" tools/dist.py)
+echo "== BAR-Rewind (the players, the Linux package for the worker)"
+(cd "$BAR_REWIND" && "$PYTHON" tools/dist.py)
 cp "$BAR_REWIND/dist/bar-rewind-linux.tar.gz" worker/
 cp "$BAR_REWIND/dist/bar-rewind.exe" site/
 cp "$BAR_REWIND/dist/bar-rewind-player-linux" site/bar-rewind-linux

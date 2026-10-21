@@ -25,8 +25,8 @@ POST /api/jobs --> DynamoDB jobs table --> Fargate Spot task (worker/), started 
 - Queueing a replay that is already parsed returns it as is, unless it failed, its file has expired, or
   it was parsed in an older .curves format than the deployed worker writes; those are parsed again.
 - `.curves` are stored gzipped and served with `Content-Encoding: gzip`: about 40% of the size crosses the wire.
-- Watch hands BAR-Rewind's player (Windows and Linux builds, served by the site) a one-hour signed link. The player
-  only downloads from this site's host, which is built into it by `deploy.sh`.
+- Watch hands BAR-Rewind's player (Windows and Linux builds, served by the site) a one-hour signed link. The
+  first link from this site asks the moderator whether to trust it; the player downloads from trusted hosts only.
 
 ## What it costs
 
