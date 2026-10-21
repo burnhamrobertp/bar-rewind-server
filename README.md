@@ -23,7 +23,7 @@ POST /api/jobs --> DynamoDB jobs table --> Fargate Spot task (worker/), started 
   worker disappears (a Spot reclaim, a crash) goes back in the queue, up to 3 tries.
 - Parsed replays, their logs and their jobs expire after 60 days (S3 lifecycle, DynamoDB TTL).
 - `.curves` are stored gzipped and served with `Content-Encoding: gzip`: about 40% of the size crosses the wire.
-- Watch hands BAR-Rewind's player (`bar-rewind.exe`, served by the site) a one-hour signed link. The player
+- Watch hands BAR-Rewind's player (Windows and Linux builds, served by the site) a one-hour signed link. The player
   only downloads from this site's host, which is built into it by `deploy.sh`.
 
 ## What it costs
