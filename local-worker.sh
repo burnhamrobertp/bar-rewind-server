@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Runs the parse worker on this machine under Docker, after deploy.sh built its image:
+#   ./local-worker.sh          (re)start it; it keeps running, and Docker restarts it with Docker Desktop
+#   ./local-worker.sh stop     stop it (Fargate takes the queue back within about 2 minutes)
+#   ./local-worker.sh key      make a new access key for it, replacing the old one (rotation)
+# Its access key lives in ~/.aws/bar-rewind-worker, the only credentials the container can see.
+# Engines, games and maps stay in the Docker volume bar-rewind-bar.
+set -euo pipefail
+cd "$(dirname "$0")"
+export AWS_PROFILE=${DEPLOY_PROFILE:-personal} AWS_REGION=${AWS_REGION:-us-east-1} MSYS_NO_PATHCONV=1
+STACK=${STACK:-bar-rewind}
+NAME=bar-rewind-worker
+KEYFILE="$HOME/.aws/bar-rewind-worker"
+output() { aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text; }
+
+new_key() {
+  local user old
+  user=$(output LocalWorkerUser)
+  old=$(aws iam list-access-keys --user-name "$user" --query 'AccessKeyMetadata[].AccessKeyId' --output text)
+  mkdir -p "$(dirname "$KEYFILE")"
+  # straight into the file: the secret is never printed
+  aws iam create-access-key --user-name "$user" --query 'AccessKey.[AccessKeyId,SecretAccessKey]' --output text |
+    { read -r id secret; printf '[default]\naws_access_key_id = %s\naws_secret_access_key = %s\n' "$id" "$secret" > "$KEYFILE"; }
+  chmod 600 "$KEYFILE"
+  for k in $old; do aws iam delete-access-key --user-name "$user" --access-key-id "$k"; done
+  echo "new access key for $user in $KEYFILE"
+}
+
+case "${1:-start}" in
+  stop) docker rm -f "$NAME" >/dev/null 2>&1 || true; echo "stopped"; exit 0 ;;
+  key) new_key; [ -z "$(docker ps -q -f name="^$NAME$")" ] && exit 0 ;;
+  start) [ -f "$KEYFILE" ] || new_key ;;
+  *) echo "usage: local-worker.sh [start|stop|key]" >&2; exit 2 ;;
+esac
+
+docker rm -f "$NAME" >/dev/null 2>&1 || true
+docker run -d --name "$NAME" --restart unless-stopped --stop-timeout 60 \
+  -e STAY=1 -e TABLE="$(output TableName)" -e BUCKET="$(output BucketName)" -e AWS_DEFAULT_REGION="$AWS_REGION" \
+  -v "$(cygpath -w "$KEYFILE" 2>/dev/null || echo "$KEYFILE"):/root/.aws/credentials:ro" \
+  -v bar-rewind-bar:/bar "$NAME:latest" >/dev/null
+echo "local worker running ($(docker ps --filter name="^$NAME$" --format '{{.Status}}'))"

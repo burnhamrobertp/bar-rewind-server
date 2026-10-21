@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-# BAR Rewind parse worker, one Fargate task: claims queued jobs from the jobs table, parses each replay
-# with BAR-Rewind's pipeline, uploads the gzipped .curves to S3 and exits once the queue has stayed
-# empty for IDLE_EXIT seconds. Engines, games and maps stay on the task's disk between its jobs.
-# Env: TABLE, BUCKET, IDLE_EXIT (default 120).
+# BAR Rewind parse worker: claims queued jobs from the jobs table, parses each replay with BAR-Rewind's
+# pipeline, uploads the gzipped .curves to S3. A Fargate task exits once the queue has stayed empty for
+# IDLE_EXIT seconds; with STAY=1 (a worker on someone's own machine) it keeps running and keeps the
+# LOCAL_WORKER record fresh, and the API starts no Fargate task while that record is recent.
+# Engines, games and maps stay on /bar between jobs.
+# Env: TABLE, BUCKET, IDLE_EXIT (default 120), STAY.
 #   worker.py --local <replay id>   parse one replay into /work/out, no AWS
 import gzip, json, os, shutil, signal, subprocess, sys, threading, time, traceback, urllib.parse, urllib.request
 from pathlib import Path
@@ -20,6 +22,7 @@ HEARTBEAT = 30
 PROGRESS_EVERY = 10
 STALE = 300
 MAX_ATTEMPTS = 3
+LOCAL_WORKER = "_worker_local"
 USER_AGENT = "bar-rewind-server (https://github.com/burnhamrobertp/bar-rewind-server)"
 
 
@@ -88,6 +91,11 @@ class Queue:
         self.s3 = boto3.client("s3")
         self.bucket = os.environ["BUCKET"]
         self.task = os.environ.get("ECS_CONTAINER_METADATA_URI_V4", "local").rsplit("/", 1)[-1]
+        self.stay = os.environ.get("STAY") == "1"
+
+    def alive(self, seen=None):
+        if self.stay:
+            self.update(LOCAL_WORKER, seen=int(time.time()) if seen is None else seen, worker=self.task)
 
     def jobs(self, status):
         from boto3.dynamodb.conditions import Attr
@@ -148,6 +156,7 @@ class Queue:
         def beat():
             while not stop.wait(HEARTBEAT):
                 self.update(job_id, mine, heartbeat=int(time.time()))
+                self.alive()
         threading.Thread(target=beat, daemon=True).start()
 
         last = {"stage": None, "at": 0}
@@ -215,7 +224,8 @@ def serve():
     idle_exit = int(os.environ.get("IDLE_EXIT", "120"))
     idle_since = time.time()
     try:
-        while time.time() - idle_since < idle_exit:
+        while queue.stay or time.time() - idle_since < idle_exit:
+            queue.alive()
             queue.requeue_stale()
             job = queue.claim()
             if job is None:
@@ -225,7 +235,10 @@ def serve():
             queue.run(job)
             idle_since = time.time()
     except Interrupted:
-        print("stopped by ECS", flush=True)
+        print("stopped", flush=True)
+    finally:
+        # gone: the API may start a Fargate worker right away
+        queue.alive(seen=0)
 
 
 if __name__ == "__main__":

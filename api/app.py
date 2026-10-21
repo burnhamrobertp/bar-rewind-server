@@ -26,6 +26,9 @@ MAX_MINUTES = int(os.environ.get("MAX_MINUTES", "150"))
 RETENTION_DAYS = int(os.environ.get("RETENTION_DAYS", "60"))
 # the .curves format the deployed worker writes; jobs parsed in an older one are parsed again
 CURVES_VERSION = int(os.environ.get("CURVES_VERSION", "0"))
+# a worker on someone's own machine (worker.py STAY=1) keeps this record fresh; jobs wait for it
+LOCAL_WORKER = "_worker_local"
+LOCAL_FRESH = 120
 REPLAY_ID = re.compile(r"\b([0-9a-f]{32})\b")
 
 _params = None
@@ -166,7 +169,7 @@ def all_jobs():
         page = TABLE.scan(**kwargs)
         items += page["Items"]
         if "LastEvaluatedKey" not in page:
-            return items
+            return [i for i in items if re.fullmatch(r"[0-9a-f]{32}", i["id"])]
         kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
 
 
@@ -220,6 +223,9 @@ def ensure_worker(jobs):
     restarts the queue when a worker exited just as a job arrived."""
     now = time.time()
     if not any(j["status"] == "queued" for j in jobs):
+        return
+    local = TABLE.get_item(Key={"id": LOCAL_WORKER}).get("Item")
+    if local and now - int(local.get("seen", 0)) < LOCAL_FRESH:
         return
     running = ECS.list_tasks(cluster=os.environ["CLUSTER"], family=os.environ["TASK_FAMILY"], desiredStatus="RUNNING")["taskArns"]
     if running:

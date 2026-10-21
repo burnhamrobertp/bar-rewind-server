@@ -97,6 +97,9 @@ echo "== worker image $TAG"
 aws ecr get-login-password | docker login --username AWS --password-stdin "${REPO%%/*}" >/dev/null
 docker build -q --platform linux/amd64 -t "$REPO:$TAG" worker >/dev/null
 docker push -q "$REPO:$TAG" >/dev/null
+# the same image for local-worker.sh, which a running local worker restarts on
+docker tag "$REPO:$TAG" bar-rewind-worker:latest
+if [ -n "$(docker ps -q -f name='^bar-rewind-worker$')" ]; then ./local-worker.sh; fi
 
 echo "== API"
 "$PYTHON" -c "import zipfile; zipfile.ZipFile('.deploy/api.zip', 'w', zipfile.ZIP_DEFLATED).write('api/app.py', 'app.py')"

@@ -59,4 +59,13 @@ The site is served at `https://$DOMAIN/` (default bar-rewind.robotofham.com), a 
 Run `./deploy.sh you@example.com` again after any change. Allowed roles are the stack's `RoleIds`
 parameter (comma-separated). `./teardown.sh` deletes everything, parsed replays included.
 
+## A worker on your own machine
+
+A desktop CPU parses several times faster than Fargate (Esker Creek, a 39-minute team game: about 9
+minutes on a Ryzen 7 5800X against 32 on Fargate). `./local-worker.sh` runs the same worker image under
+Docker on this machine; while it runs, the API leaves Fargate alone, and it takes the queue back about two
+minutes after the local worker stops. The container sees only its own access key (`~/.aws/bar-rewind-worker`,
+limited to the jobs table and the bucket's curves and logs) and keeps engines, games and maps in the Docker
+volume `bar-rewind-bar`. `./local-worker.sh stop` stops it; `./local-worker.sh key` replaces its access key.
+
 AI disclosure: written with assistance from Claude Code.

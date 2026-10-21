@@ -147,6 +147,21 @@ Resources:
                 Action: s3:PutObject
                 Resource: [!Sub "${Bucket.Arn}/curves/*", !Sub "${Bucket.Arn}/logs/*"]
 
+  # a worker on the owner's own machine (local-worker.sh); its access key is made outside the stack
+  LocalWorker:
+    Type: AWS::IAM::User
+    Properties:
+      Policies:
+        - PolicyName: worker
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action: [dynamodb:Scan, dynamodb:UpdateItem]
+                Resource: !GetAtt Jobs.Arn
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource: [!Sub "${Bucket.Arn}/curves/*", !Sub "${Bucket.Arn}/logs/*"]
+
   WorkerTask:
     Type: AWS::ECS::TaskDefinition
     Properties:
@@ -375,3 +390,7 @@ Outputs:
     Value: !GetAtt Repository.RepositoryUri
   ApiFunction:
     Value: !Ref Api
+  TableName:
+    Value: !Ref Jobs
+  LocalWorkerUser:
+    Value: !Ref LocalWorker
