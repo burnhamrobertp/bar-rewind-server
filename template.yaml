@@ -214,6 +214,10 @@ Resources:
                 Action: ecs:RunTask
                 Resource: !Sub "arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/${AWS::StackName}-worker:*"
               - Effect: Allow
+                Action: ecs:TagResource
+                Resource: !Sub "arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task/*"
+                Condition: { StringEquals: { "ecs:CreateAction": RunTask } }
+              - Effect: Allow
                 Action: ecs:ListTasks
                 Resource: "*"
                 Condition: { ArnEquals: { "ecs:cluster": !GetAtt Cluster.Arn } }
@@ -361,6 +365,8 @@ Resources:
         BudgetType: COST
         TimeUnit: MONTHLY
         BudgetLimit: { Amount: !Ref MonthlyBudget, Unit: USD }
+        # deploy.sh tags the stack project=<stack name>, a cost allocation tag in Billing
+        CostFilters: { TagKeyValue: [!Sub "user:project$${AWS::StackName}"] }
       NotificationsWithSubscribers:
         - Notification: { NotificationType: ACTUAL, ComparisonOperator: GREATER_THAN, Threshold: 80 }
           Subscribers: [{ SubscriptionType: EMAIL, Address: !Ref AlertEmail }]

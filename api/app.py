@@ -186,7 +186,7 @@ def ensure_worker(jobs):
                  networkConfiguration={"awsvpcConfiguration": {"subnets": os.environ["SUBNETS"].split(","),
                                                                "securityGroups": [os.environ["SECURITY_GROUP"]],
                                                                "assignPublicIp": "ENABLED"}},
-                 startedBy="api-%d" % now)
+                 propagateTags="TASK_DEFINITION", startedBy="api-%d" % now)
 
 
 def list_jobs(user):

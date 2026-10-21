@@ -35,7 +35,8 @@ echo "== certificate for $DOMAIN"
 CERT=$(aws acm list-certificates --certificate-statuses ISSUED PENDING_VALIDATION \
   --query "CertificateSummaryList[?DomainName=='$DOMAIN'].CertificateArn | [0]" --output text)
 if [ "$CERT" = "None" ]; then
-  CERT=$(aws acm request-certificate --domain-name "$DOMAIN" --validation-method DNS --query CertificateArn --output text)
+  CERT=$(aws acm request-certificate --domain-name "$DOMAIN" --validation-method DNS --tags "Key=project,Value=$STACK" \
+    --query CertificateArn --output text)
   sleep 10
 fi
 if [ "$(aws acm describe-certificate --certificate-arn "$CERT" --query Certificate.Status --output text)" != "ISSUED" ]; then
@@ -50,7 +51,7 @@ VPC=$(aws ec2 describe-vpcs --filters Name=is-default,Values=true --query 'Vpcs[
 SUBNETS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC" Name=default-for-az,Values=true --query 'Subnets[].SubnetId' --output text | tr '\t' ',')
 TAG=$(date -u +%Y%m%d%H%M%S)
 aws cloudformation deploy --stack-name "$STACK" --template-file template.yaml --capabilities CAPABILITY_IAM \
-  --no-fail-on-empty-changeset --parameter-overrides \
+  --no-fail-on-empty-changeset --tags "project=$STACK" --parameter-overrides \
   "SiteDomain=$DOMAIN" "BasePath=$BASE_PATH" "CertificateArn=$CERT" "VpcId=$VPC" "SubnetIds=$SUBNETS" \
   "CloudFrontPublicKey=$PUBLIC_KEY" "OriginSecret=$(param origin-secret)" "AlertEmail=$EMAIL" "ImageTag=$TAG"
 BUCKET=$(output BucketName)
