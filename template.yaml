@@ -1,0 +1,353 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: BAR Rewind server - queue BAR replays, parse them on Fargate Spot, serve the .curves through CloudFront
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Public subnets (the worker gets a public IP; there is no NAT gateway)
+  CloudFrontPublicKey:
+    Type: String
+    Description: PEM public key for signed download URLs (its private half is in SSM)
+  OriginSecret:
+    Type: String
+    NoEcho: true
+    Description: Header value CloudFront adds so the API only answers through it
+  DiscordClientId:
+    Type: String
+    Default: unset
+  GuildId:
+    Type: String
+    Default: "549281623154229250"
+  RoleIds:
+    Type: String
+    Default: "549291914164305920"
+    Description: Comma-separated Discord role ids allowed in
+  AlertEmail:
+    Type: String
+    Description: Where AWS Budgets sends cost alerts
+  MonthlyBudget:
+    Type: Number
+    Default: 10
+  RetentionDays:
+    Type: Number
+    Default: 60
+  WorkerCpu:
+    Type: String
+    Default: "2048"
+  WorkerMemory:
+    Type: String
+    Default: "8192"
+  ImageTag:
+    Type: String
+    Default: latest
+
+Resources:
+  # storage ---------------------------------------------------------------------------------------
+  Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules: [{ ObjectOwnership: BucketOwnerEnforced }]
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-curves
+            Status: Enabled
+            Prefix: curves/
+            ExpirationInDays: !Ref RetentionDays
+          - Id: expire-logs
+            Status: Enabled
+            Prefix: logs/
+            ExpirationInDays: !Ref RetentionDays
+          - Id: abort-uploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload: { DaysAfterInitiation: 1 }
+
+  BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref Bucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal: { Service: cloudfront.amazonaws.com }
+            Action: s3:GetObject
+            Resource:
+              - !Sub "${Bucket.Arn}/site/*"
+              - !Sub "${Bucket.Arn}/curves/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${Distribution}"
+
+  Jobs:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions: [{ AttributeName: id, AttributeType: S }]
+      KeySchema: [{ AttributeName: id, KeyType: HASH }]
+      TimeToLiveSpecification: { AttributeName: expires, Enabled: true }
+
+  Repository:
+    Type: AWS::ECR::Repository
+    Properties:
+      EmptyOnDelete: true
+      LifecyclePolicy:
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"keep 3","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":3},"action":{"type":"expire"}}]}'
+
+  # settings the API reads; deploy.sh adds the secret ones as SecureStrings -----------------------
+  ClientIdParam:
+    Type: AWS::SSM::Parameter
+    Properties: { Name: !Sub "/${AWS::StackName}/discord-client-id", Type: String, Value: !Ref DiscordClientId }
+  GuildParam:
+    Type: AWS::SSM::Parameter
+    Properties: { Name: !Sub "/${AWS::StackName}/guild-id", Type: String, Value: !Ref GuildId }
+  RolesParam:
+    Type: AWS::SSM::Parameter
+    Properties: { Name: !Sub "/${AWS::StackName}/role-ids", Type: String, Value: !Ref RoleIds }
+
+  # worker ----------------------------------------------------------------------------------------
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      CapacityProviders: [FARGATE, FARGATE_SPOT]
+
+  WorkerLogs:
+    Type: AWS::Logs::LogGroup
+    Properties: { LogGroupName: !Sub "/${AWS::StackName}/worker", RetentionInDays: 7 }
+
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement: [{ Effect: Allow, Principal: { Service: ecs-tasks.amazonaws.com }, Action: sts:AssumeRole }]
+      ManagedPolicyArns: [!Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"]
+
+  WorkerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement: [{ Effect: Allow, Principal: { Service: ecs-tasks.amazonaws.com }, Action: sts:AssumeRole }]
+      Policies:
+        - PolicyName: worker
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action: [dynamodb:Scan, dynamodb:UpdateItem]
+                Resource: !GetAtt Jobs.Arn
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource: [!Sub "${Bucket.Arn}/curves/*", !Sub "${Bucket.Arn}/logs/*"]
+
+  WorkerTask:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "${AWS::StackName}-worker"
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: !Ref WorkerCpu
+      Memory: !Ref WorkerMemory
+      EphemeralStorage: { SizeInGiB: 40 }
+      RuntimePlatform: { OperatingSystemFamily: LINUX, CpuArchitecture: X86_64 }
+      ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+      TaskRoleArn: !GetAtt WorkerRole.Arn
+      ContainerDefinitions:
+        - Name: worker
+          Image: !Sub "${Repository.RepositoryUri}:${ImageTag}"
+          Essential: true
+          StopTimeout: 120
+          Environment:
+            - { Name: TABLE, Value: !Ref Jobs }
+            - { Name: BUCKET, Value: !Ref Bucket }
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref WorkerLogs
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: worker
+
+  WorkerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: BAR Rewind worker, outbound only
+      VpcId: !Ref VpcId
+      SecurityGroupEgress: [{ IpProtocol: "-1", CidrIp: 0.0.0.0/0 }]
+
+  # API -------------------------------------------------------------------------------------------
+  ApiLogs:
+    Type: AWS::Logs::LogGroup
+    Properties: { LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-api", RetentionInDays: 7 }
+
+  ApiRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement: [{ Effect: Allow, Principal: { Service: lambda.amazonaws.com }, Action: sts:AssumeRole }]
+      Policies:
+        - PolicyName: api
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub "${ApiLogs.Arn}:*"
+              - Effect: Allow
+                Action: [dynamodb:Scan, dynamodb:GetItem, dynamodb:PutItem]
+                Resource: !GetAtt Jobs.Arn
+              - Effect: Allow
+                Action: ssm:GetParametersByPath
+                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${AWS::StackName}"
+              - Effect: Allow
+                Action: ecs:RunTask
+                Resource: !Sub "arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/${AWS::StackName}-worker:*"
+              - Effect: Allow
+                Action: ecs:ListTasks
+                Resource: "*"
+                Condition: { ArnEquals: { "ecs:cluster": !GetAtt Cluster.Arn } }
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource: [!GetAtt ExecutionRole.Arn, !GetAtt WorkerRole.Arn]
+
+  # deploy.sh replaces this code with api/app.py
+  Api:
+    Type: AWS::Lambda::Function
+    DependsOn: ApiLogs
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-api"
+      Runtime: python3.13
+      Architectures: [arm64]
+      Handler: app.handler
+      MemorySize: 256
+      Timeout: 15
+      Role: !GetAtt ApiRole.Arn
+      Code:
+        ZipFile: |
+          def handler(event, context):
+              return {"statusCode": 503, "body": "not deployed yet"}
+      Environment:
+        Variables:
+          TABLE: !Ref Jobs
+          PARAMS: !Sub "/${AWS::StackName}"
+          CLUSTER: !Ref Cluster
+          TASK_FAMILY: !Sub "${AWS::StackName}-worker"
+          SUBNETS: !Join [",", !Ref SubnetIds]
+          SECURITY_GROUP: !Ref WorkerSecurityGroup
+          KEY_PAIR_ID: !Ref SigningKey
+          RETENTION_DAYS: !Ref RetentionDays
+
+  ApiUrl:
+    Type: AWS::Lambda::Url
+    Properties: { TargetFunctionArn: !Ref Api, AuthType: NONE }
+
+  # function URLs need both permissions since 2025; the API itself rejects requests without OriginSecret
+  ApiUrlPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref Api
+      Action: lambda:InvokeFunctionUrl
+      Principal: "*"
+      FunctionUrlAuthType: NONE
+  ApiInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref Api
+      Action: lambda:InvokeFunction
+      Principal: "*"
+      InvokedViaFunctionUrl: true
+
+  # CloudFront ------------------------------------------------------------------------------------
+  SigningKey:
+    Type: AWS::CloudFront::PublicKey
+    Properties:
+      PublicKeyConfig:
+        Name: !Sub "${AWS::StackName}-downloads"
+        CallerReference: !Sub "${AWS::StackName}-downloads"
+        EncodedKey: !Ref CloudFrontPublicKey
+
+  SigningKeyGroup:
+    Type: AWS::CloudFront::KeyGroup
+    Properties:
+      KeyGroupConfig: { Name: !Sub "${AWS::StackName}-downloads", Items: [!Ref SigningKey] }
+
+  BucketAccess:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "${AWS::StackName}-bucket"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: BAR Rewind
+        PriceClass: PriceClass_100
+        HttpVersion: http2and3
+        DefaultRootObject: index.html
+        Origins:
+          - Id: site
+            DomainName: !GetAtt Bucket.RegionalDomainName
+            OriginPath: /site
+            OriginAccessControlId: !Ref BucketAccess
+            S3OriginConfig: { OriginAccessIdentity: "" }
+          - Id: bucket
+            DomainName: !GetAtt Bucket.RegionalDomainName
+            OriginAccessControlId: !Ref BucketAccess
+            S3OriginConfig: { OriginAccessIdentity: "" }
+          - Id: api
+            DomainName: !Select [2, !Split ["/", !GetAtt ApiUrl.FunctionUrl]]
+            CustomOriginConfig: { OriginProtocolPolicy: https-only, OriginSSLProtocols: [TLSv1.2] }
+            OriginCustomHeaders: [{ HeaderName: X-Origin-Secret, HeaderValue: !Ref OriginSecret }]
+        # managed policies: CachingDisabled, CachingOptimized, AllViewerExceptHostHeader
+        DefaultCacheBehavior:
+          TargetOriginId: site
+          ViewerProtocolPolicy: redirect-to-https
+          CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+          Compress: true
+        CacheBehaviors:
+          - PathPattern: /api/*
+            TargetOriginId: api
+            ViewerProtocolPolicy: https-only
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE]
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+          - PathPattern: /curves/*
+            TargetOriginId: bucket
+            ViewerProtocolPolicy: https-only
+            CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+            TrustedKeyGroups: [!Ref SigningKeyGroup]
+            Compress: false
+
+  # cost guard ------------------------------------------------------------------------------------
+  Budget:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: !Sub "${AWS::StackName}-monthly"
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit: { Amount: !Ref MonthlyBudget, Unit: USD }
+      NotificationsWithSubscribers:
+        - Notification: { NotificationType: ACTUAL, ComparisonOperator: GREATER_THAN, Threshold: 80 }
+          Subscribers: [{ SubscriptionType: EMAIL, Address: !Ref AlertEmail }]
+        - Notification: { NotificationType: FORECASTED, ComparisonOperator: GREATER_THAN, Threshold: 100 }
+          Subscribers: [{ SubscriptionType: EMAIL, Address: !Ref AlertEmail }]
+
+Outputs:
+  SiteUrl:
+    Value: !Sub "https://${Distribution.DomainName}"
+  SiteHost:
+    Value: !GetAtt Distribution.DomainName
+  BucketName:
+    Value: !Ref Bucket
+  RepositoryUri:
+    Value: !GetAtt Repository.RepositoryUri
+  ApiFunction:
+    Value: !Ref Api
