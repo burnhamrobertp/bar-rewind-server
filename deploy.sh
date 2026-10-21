@@ -64,6 +64,14 @@ if [ "$(aws acm describe-certificate --certificate-arn "$CERT" --query Certifica
 fi
 
 echo "== stack"
+# ECS needs its service-linked role once per account before the first cluster
+aws iam get-role --role-name AWSServiceRoleForECS >/dev/null 2>&1 ||
+  aws iam create-service-linked-role --aws-service-name ecs.amazonaws.com >/dev/null
+# a first create that failed leaves a stack that can only be deleted
+if [ "$(aws cloudformation describe-stacks --stack-name "$STACK" --query 'Stacks[0].StackStatus' --output text 2>/dev/null)" = "ROLLBACK_COMPLETE" ]; then
+  aws cloudformation delete-stack --stack-name "$STACK"
+  aws cloudformation wait stack-delete-complete --stack-name "$STACK"
+fi
 VPC=$(aws ec2 describe-vpcs --filters Name=is-default,Values=true --query 'Vpcs[0].VpcId' --output text)
 SUBNETS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC" Name=default-for-az,Values=true --query 'Subnets[].SubnetId' --output text | tr '\t' ',')
 TAG=$(date -u +%Y%m%d%H%M%S)
