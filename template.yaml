@@ -39,13 +39,6 @@ Parameters:
   RetentionDays:
     Type: Number
     Default: 60
-  WorkerCpu:
-    Type: String
-    Default: "2048"
-  WorkerMemory:
-    Type: String
-    Default: "16384"
-    Description: bake holds a match's whole recording in memory; a 39-minute team game's bake was killed at 8 GB
   ImageTag:
     Type: String
     Default: latest
@@ -160,8 +153,9 @@ Resources:
       Family: !Sub "${AWS::StackName}-worker"
       RequiresCompatibilities: [FARGATE]
       NetworkMode: awsvpc
-      Cpu: !Ref WorkerCpu
-      Memory: !Ref WorkerMemory
+      Cpu: "2048"
+      # bake holds a match's whole recording in memory; a 39-minute team game's bake was killed at 8 GB
+      Memory: "16384"
       EphemeralStorage: { SizeInGiB: 40 }
       RuntimePlatform: { OperatingSystemFamily: LINUX, CpuArchitecture: X86_64 }
       ExecutionRoleArn: !GetAtt ExecutionRole.Arn
