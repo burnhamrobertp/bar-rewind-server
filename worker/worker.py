@@ -6,7 +6,7 @@
 # Engines, games and maps stay on /bar between jobs.
 # Env: TABLE, BUCKET, IDLE_EXIT (default 120), STAY.
 #   worker.py --local <replay id>   parse one replay into /work/out, no AWS
-import gzip, json, os, shutil, signal, subprocess, sys, threading, time, traceback, urllib.parse, urllib.request
+import gzip, json, os, re, shutil, signal, subprocess, sys, threading, time, traceback, urllib.parse, urllib.request
 from pathlib import Path
 
 sys.path.insert(0, "/opt/bar-rewind/tools")
@@ -52,6 +52,25 @@ def install_engine(version, report):
     archive.unlink()
 
 
+RECORDING_WIDGETS = {"Replay Dump v2", "Replay Dump Eco"}
+BAR_WIDGETS = Path(__file__).with_name("bar-widgets.txt")
+
+
+def interface_off():
+    """BAR's interface widgets draw nothing in a headless parse yet took about a quarter of a long one:
+    the worker's own BAR folder gets a widget config with only the recording widgets on, for the
+    widgets listed with the worker and any a newer BAR added to the config since."""
+    config = BAR / "LuaUI" / "Config" / "BYAR.lua"
+    names = {n for n in BAR_WIDGETS.read_text().splitlines() if n}
+    if config.exists():
+        order = re.search(r"\n\torder\s*=\s*\{(.*?)\n\t\}", config.read_text(errors="replace"), re.S)
+        if order:
+            names |= set(re.findall(r'\["([^"]+)"\]\s*=\s*-?\d+', order.group(1)))
+    entries = "\n".join(f'\t\t[{json.dumps(n)}] = {1 if n in RECORDING_WIDGETS else 0},' for n in sorted(names | RECORDING_WIDGETS))
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(f"return {{\n\tallowUserWidgets = true,\n\torder = {{\n{entries}\n\t}},\n}}\n")
+
+
 def process(replay_id, report):
     """Parses one replay; returns the .curves path. `report(stage, pct)` is called as it goes."""
     report("looking up the replay", 0)
@@ -67,6 +86,7 @@ def process(replay_id, report):
         for event in pipeline.download(str(BAR), missing):
             if event[0] == "progress":
                 report(event[2], event[1])
+    interface_off()
     for event in pipeline.parse(CFG, demo):
         if event[0] == "progress":
             report(event[2], event[1])

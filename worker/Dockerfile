@@ -5,5 +5,5 @@ RUN apt-get update \
 # BAR-Rewind's Linux package (zig build dist in BAR-Rewind, or a release); deploy.sh puts it here
 COPY bar-rewind-linux.tar.gz /tmp/
 RUN tar -xzf /tmp/bar-rewind-linux.tar.gz -C /opt && rm /tmp/bar-rewind-linux.tar.gz
-COPY worker.py /opt/worker.py
+COPY worker.py bar-widgets.txt /opt/
 ENTRYPOINT ["python3", "/opt/worker.py"]
