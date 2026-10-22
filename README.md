@@ -56,8 +56,10 @@ The site is served at `https://$DOMAIN/` (default bar-rewind.robotofham.com), a 
 3. Point the host at the CloudFront host it prints (a CNAME, DNS only if Cloudflare manages the domain),
    and add the redirect URL it prints to the Discord application's OAuth2 redirects.
 
-Run `./deploy.sh you@example.com` again after any change. Allowed roles are the stack's `RoleIds`
-parameter (comma-separated). `./teardown.sh` deletes everything, parsed replays included.
+Run `./deploy.sh you@example.com` again after any change. Who may sign in is `ROLE_IDS` (Discord roles) and
+`USER_IDS` (Discord users, whatever their roles), comma-separated, set at the top of `deploy.sh` or in the
+environment. Each request checks with Discord again at most every 5 minutes, so losing the role ends access
+within that time. `./teardown.sh` deletes everything, parsed replays included.
 
 ## A worker on your own machine
 

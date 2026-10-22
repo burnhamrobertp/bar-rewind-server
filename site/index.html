@@ -65,16 +65,16 @@ function el(tag, attrs = {}, ...children) {
 async function api(path, options) {
   const r = await fetch(path, { credentials: "same-origin", ...options });
   const body = await r.json().catch(() => ({}));
-  if (r.status === 401) { showSignin(); throw new Error(body.error || "sign in"); }
+  if (r.status === 401 || r.status === 403) { showSignin(r.status === 403 ? "denied" : null); throw new Error(body.error || "sign in"); }
   if (!r.ok) throw new Error(body.error || r.statusText);
   return body;
 }
 
-function showSignin() {
+function showSignin(why) {
   $("app").hidden = true;
   $("signin").hidden = false;
   $("who").textContent = "";
-  const reason = new URLSearchParams(location.search).get("signin");
+  const reason = why || new URLSearchParams(location.search).get("signin");
   $("signin-error").textContent = reason === "denied" ? "That Discord account doesn't have a role that's allowed in."
     : reason === "failed" ? "Discord sign-in didn't complete. Try again." : "";
 }

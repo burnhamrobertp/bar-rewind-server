@@ -28,8 +28,12 @@ Parameters:
     Default: "549281623154229250"
   RoleIds:
     Type: String
-    Default: "549291914164305920"
+    Default: "549291872192036874"
     Description: Comma-separated Discord role ids allowed in
+  UserIds:
+    Type: String
+    Default: "183418851067822085"
+    Description: Comma-separated Discord user ids allowed in whatever their roles
   AlertEmail:
     Type: String
     Description: Where AWS Budgets sends cost alerts
@@ -113,6 +117,9 @@ Resources:
   RolesParam:
     Type: AWS::SSM::Parameter
     Properties: { Name: !Sub "/${AWS::StackName}/role-ids", Type: String, Value: !Ref RoleIds }
+  UsersParam:
+    Type: AWS::SSM::Parameter
+    Properties: { Name: !Sub "/${AWS::StackName}/user-ids", Type: String, Value: !Ref UserIds }
 
   # worker ----------------------------------------------------------------------------------------
   Cluster:

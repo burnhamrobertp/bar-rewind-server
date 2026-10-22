@@ -12,6 +12,10 @@ export AWS_PROFILE=${DEPLOY_PROFILE:-personal} AWS_REGION=${AWS_REGION:-us-east-
 export MSYS_NO_PATHCONV=1
 STACK=${STACK:-bar-rewind}
 DOMAIN=${DOMAIN:-bar-rewind.robotofham.com}
+# who may sign in: members of the BAR Discord with one of these roles, or these users. Passed every time,
+# since CloudFormation would otherwise keep the stack's earlier values over the template's defaults.
+ROLE_IDS=${ROLE_IDS:-549291872192036874}
+USER_IDS=${USER_IDS:-183418851067822085}
 BAR_REWIND=${BAR_REWIND:-../BAR-Rewind}
 # the first that runs: on Windows python3 can be the Microsoft Store's placeholder
 for candidate in ${PYTHON:-} python3 python; do
@@ -82,7 +86,8 @@ CURVES_VERSION=$(sed -n 's/^pub const version = \([0-9]*\);.*/\1/p' "$BAR_REWIND
 aws cloudformation deploy --stack-name "$STACK" --template-file template.yaml --capabilities CAPABILITY_IAM \
   --no-fail-on-empty-changeset --tags "project=$STACK" --parameter-overrides \
   "SiteDomain=$DOMAIN" "CertificateArn=$CERT" "VpcId=$VPC" "SubnetIds=$SUBNETS" \
-  "CloudFrontPublicKey=$PUBLIC_KEY" "OriginSecret=$ORIGIN_SECRET" "AlertEmail=$EMAIL" "ImageTag=$TAG" "CurvesVersion=$CURVES_VERSION"
+  "CloudFrontPublicKey=$PUBLIC_KEY" "OriginSecret=$ORIGIN_SECRET" "AlertEmail=$EMAIL" "ImageTag=$TAG" "CurvesVersion=$CURVES_VERSION" \
+  "RoleIds=$ROLE_IDS" "UserIds=$USER_IDS"
 BUCKET=$(output BucketName)
 REPO=$(output RepositoryUri)
 aws ssm put-parameter --name "/$STACK/site-url" --type String --overwrite --value "https://$DOMAIN" >/dev/null

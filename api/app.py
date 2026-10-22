@@ -19,6 +19,8 @@ DISCORD = "https://discord.com/api/v10"
 REPLAY_API = "https://api.bar-rts.com/replays/"
 USER_AGENT = "bar-rewind-server (https://github.com/burnhamrobertp/bar-rewind-server, 1)"
 SESSION_SECONDS = 12 * 3600
+# a session asks Discord again whether its member still may come in at most this often
+ROLE_RECHECK = 300
 LINK_SECONDS = 3600
 DAILY_LIMIT = int(os.environ.get("DAILY_LIMIT", "30"))
 QUEUE_LIMIT = int(os.environ.get("QUEUE_LIMIT", "50"))
@@ -116,16 +118,24 @@ def site():
     return params()["site-url"].rstrip("/")
 
 
-def member_roles(access_token):
-    """The member's role ids in the guild, or None when they are not in it or the token is dead."""
+def guild_member(access_token):
+    """The guild member behind a token, or None when they are not in the guild or the token is dead"""
     status, member = http(f"{DISCORD}/users/@me/guilds/{params()['guild-id']}/member",
                           headers={"Authorization": "Bearer " + access_token})
 
-    return (member or {}).get("roles", []) if status == 200 else None, member
+    return member if status == 200 and member else None
 
 
-def allowed(roles):
-    return bool(set(roles or []) & {r.strip() for r in params()["role-ids"].split(",")})
+def ids(name):
+    return {i.strip() for i in params().get(name, "").split(",") if i.strip()}
+
+
+def allowed(member):
+    """Holds one of the allowed roles, or is one of the allowed users"""
+    if member is None:
+        return False
+
+    return bool(set(member.get("roles") or []) & ids("role-ids")) or member.get("user", {}).get("id") in ids("user-ids")
 
 
 def login(event):
@@ -147,12 +157,13 @@ def callback(event):
     status, token = http(f"{DISCORD}/oauth2/token", form, {"Content-Type": "application/x-www-form-urlencoded"})
     if status != 200:
         return redirect("/?signin=failed")
-    roles, member = member_roles(token["access_token"])
-    if not allowed(roles):
+    member = guild_member(token["access_token"])
+    if not allowed(member):
         return redirect("/?signin=denied", [cookie("st", "", 0)])
     user = member["user"]
+    now = int(time.time())
     payload = {"uid": user["id"], "name": member.get("nick") or user.get("global_name") or user["username"],
-               "tok": token["access_token"], "exp": int(time.time()) + min(SESSION_SECONDS, int(token.get("expires_in", SESSION_SECONDS)))}
+               "tok": token["access_token"], "chk": now, "exp": now + min(SESSION_SECONDS, int(token.get("expires_in", SESSION_SECONDS)))}
 
     return redirect("/", [cookie("st", "", 0), cookie("s", sign(payload), SESSION_SECONDS)])
 
@@ -254,12 +265,6 @@ def submit(event, user):
     if not m:
         return respond(400, {"error": "paste a bar-rts.com replay link or its 32-character id"})
     replay_id = m.group(1)
-
-    roles, _ = member_roles(user["tok"])
-    if roles is None:
-        return respond(401, {"error": "your Discord sign-in expired: sign in again"})
-    if not allowed(roles):
-        return respond(403, {"error": "your Discord account no longer has a role that may queue replays"})
 
     jobs = all_jobs()
     existing = next((j for j in jobs if j["id"] == replay_id), None)
@@ -373,10 +378,29 @@ def handler(event, context):
     user = session(event)
     if user is None:
         return respond(401, {"error": "sign in"})
-    if path == "/api/me":
-        return respond(200, {"name": user["name"]})
     if path == "/api/logout":
         return redirect("/", [cookie("s", "", 0)])
+
+    # access ends when the role does, not when the session does
+    refreshed = []
+    now = int(time.time())
+    if now - int(user.get("chk", 0)) >= ROLE_RECHECK or (path == "/api/jobs" and method == "POST"):
+        member = guild_member(user["tok"])
+        if member is None:
+            return respond(401, {"error": "your Discord sign-in expired: sign in again"}, [cookie("s", "", 0)])
+        if not allowed(member):
+            return respond(403, {"error": "your Discord account no longer has access"}, [cookie("s", "", 0)])
+        user["chk"] = now
+        refreshed = [cookie("s", sign(user), max(0, int(user["exp"]) - now))]
+    response = route(event, method, path, user)
+    response["cookies"] = response.get("cookies", []) + refreshed
+
+    return response
+
+
+def route(event, method, path, user):
+    if path == "/api/me":
+        return respond(200, {"name": user["name"]})
     if path == "/api/jobs" and method == "GET":
         return list_jobs(user)
     if path == "/api/jobs" and method == "POST":
