@@ -188,15 +188,16 @@ def outdated(job):
     return job["status"] == "done" and int(job.get("curves_version", 0)) < CURVES_VERSION
 
 
-def curves_key(replay_id):
-    return f"curves/{replay_id}.curves"
+def curves_key(job):
+    """Each parse gets its own name; jobs parsed before that use the replay id alone"""
+    return job.get("curves_key") or f"curves/{job['id']}.curves"
 
 
-def stored(replay_id):
+def stored(job):
     """Whether the parsed file is still in S3: the lifecycle rule can delete it before DynamoDB
     gets round to expiring its job."""
     try:
-        S3.head_object(Bucket=os.environ["BUCKET"], Key=curves_key(replay_id))
+        S3.head_object(Bucket=os.environ["BUCKET"], Key=curves_key(job))
     except S3.exceptions.ClientError as e:
         if e.response["Error"]["Code"] in ("404", "NoSuchKey", "NotFound"):
             return False
@@ -269,7 +270,7 @@ def submit(event, user):
     jobs = all_jobs()
     existing = next((j for j in jobs if j["id"] == replay_id), None)
     reusable = existing and existing["status"] != "failed" and not (
-        existing["status"] == "done" and (outdated(existing) or not stored(replay_id)))
+        existing["status"] == "done" and (outdated(existing) or not stored(existing)))
     if reusable:
         ensure_worker(jobs)
         return respond(200, {"job": public(existing)})
@@ -356,9 +357,9 @@ def watch(replay_id):
         return respond(404, {"error": "that replay is not parsed"})
     if outdated(job):
         return respond(409, {"error": "parsed for an older player: queue it again"})
-    if not stored(replay_id):
+    if not stored(job):
         return respond(404, {"error": "that replay's parse has expired: queue it again"})
-    url = signed_url(f"{site()}/{curves_key(replay_id)}", int(time.time()) + LINK_SECONDS)
+    url = signed_url(f"{site()}/{curves_key(job)}", int(time.time()) + LINK_SECONDS)
 
     return respond(200, {"url": url, "link": "barrewind://play?url=" + urllib.parse.quote(url, safe="")})
 

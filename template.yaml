@@ -153,6 +153,9 @@ Resources:
               - Effect: Allow
                 Action: s3:PutObject
                 Resource: [!Sub "${Bucket.Arn}/curves/*", !Sub "${Bucket.Arn}/logs/*"]
+              - Effect: Allow
+                Action: s3:DeleteObject
+                Resource: !Sub "${Bucket.Arn}/curves/*"
 
   # a worker on the owner's own machine (local-worker.sh); its access key is made outside the stack
   LocalWorker:
@@ -168,6 +171,9 @@ Resources:
               - Effect: Allow
                 Action: s3:PutObject
                 Resource: [!Sub "${Bucket.Arn}/curves/*", !Sub "${Bucket.Arn}/logs/*"]
+              - Effect: Allow
+                Action: s3:DeleteObject
+                Resource: !Sub "${Bucket.Arn}/curves/*"
 
   WorkerTask:
     Type: AWS::ECS::TaskDefinition

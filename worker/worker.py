@@ -179,12 +179,16 @@ class Queue:
             packed = curves.with_suffix(".curves.gz")
             with open(curves, "rb") as src, gzip.open(packed, "wb", 6) as dst:
                 shutil.copyfileobj(src, dst, 1 << 20)
-            self.s3.upload_file(str(packed), self.bucket, f"curves/{job_id}.curves", ExtraArgs={
+            # a name per parse: CloudFront and the players' download caches keep a name's first bytes
+            key = f"curves/{job_id}-{int(job['started'])}.curves"
+            self.s3.upload_file(str(packed), self.bucket, key, ExtraArgs={
                 "ContentEncoding": "gzip", "ContentType": "application/octet-stream",
                 "ContentDisposition": f'attachment; filename="{job_id}.curves"'})
             self.update(job_id, mine, status="done", stage="done", pct=100, finished=int(time.time()),
                         size=curves.stat().st_size, packed_size=packed.stat().st_size,
-                        curves_version=pipeline.curves_version(curves))
+                        curves_version=pipeline.curves_version(curves), curves_key=key)
+            for old in {job.get("curves_key"), f"curves/{job_id}.curves"} - {None, key}:
+                self.s3.delete_object(Bucket=self.bucket, Key=old)
             curves.unlink()
             packed.unlink()
         except Interrupted:
