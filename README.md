@@ -70,4 +70,8 @@ minutes after the local worker stops. The container sees only its own access key
 limited to the jobs table and the bucket's curves and logs) and keeps engines, games and maps in the Docker
 volume `bar-rewind-bar`. `./local-worker.sh stop` stops it; `./local-worker.sh key` replaces its access key.
 
+`./local-worker.sh widgets <folder>` runs the `.lua` widgets in that folder in every parse (remembered across
+restarts; `widgets none` forgets it). Deploying with `CLOUD_WORKER=off` stops Fargate parsing altogether:
+queued jobs then wait for a local worker (`CLOUD_WORKER=on` turns it back on).
+
 AI disclosure: written with assistance from Claude Code.
