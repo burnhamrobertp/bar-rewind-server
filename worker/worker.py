@@ -54,19 +54,43 @@ def install_engine(version, report):
 
 RECORDING_WIDGETS = {"Replay Dump v2", "Replay Dump Eco"}
 BAR_WIDGETS = Path(__file__).with_name("bar-widgets.txt")
+# widgets of your own for every parse (local-worker.sh widgets <folder>)
+EXTRA_WIDGETS = Path("/widgets")
 
 
-def interface_off():
+def extra_widgets():
+    """Copies the widgets in EXTRA_WIDGETS into the BAR folder, after removing the ones copied last
+    time (one may have been taken out), and returns their names."""
+    target = BAR / "LuaUI" / "Widgets"
+    target.mkdir(parents=True, exist_ok=True)
+    copied = target / ".extra-widgets"
+    if copied.exists():
+        for name in copied.read_text().splitlines():
+            (target / name).unlink(missing_ok=True)
+    files = sorted(EXTRA_WIDGETS.glob("*.lua")) if EXTRA_WIDGETS.is_dir() else []
+    names = set()
+    for f in files:
+        shutil.copyfile(f, target / f.name)
+        found = re.search(r'name\s*=\s*"([^"]+)"', f.read_text(errors="replace"))
+        if found:
+            names.add(found.group(1))
+    copied.write_text("\n".join(f.name for f in files))
+
+    return names
+
+
+def interface_off(keep):
     """BAR's interface widgets draw nothing in a headless parse yet took about a quarter of a long one:
-    the worker's own BAR folder gets a widget config with only the recording widgets on, for the
-    widgets listed with the worker and any a newer BAR added to the config since."""
+    the worker's own BAR folder gets a widget config with only the recording widgets and `keep` on, for
+    the widgets listed with the worker and any a newer BAR added to the config since."""
     config = BAR / "LuaUI" / "Config" / "BYAR.lua"
     names = {n for n in BAR_WIDGETS.read_text().splitlines() if n}
     if config.exists():
         order = re.search(r"\n\torder\s*=\s*\{(.*?)\n\t\}", config.read_text(errors="replace"), re.S)
         if order:
             names |= set(re.findall(r'\["([^"]+)"\]\s*=\s*-?\d+', order.group(1)))
-    entries = "\n".join(f'\t\t[{json.dumps(n)}] = {1 if n in RECORDING_WIDGETS else 0},' for n in sorted(names | RECORDING_WIDGETS))
+    on = RECORDING_WIDGETS | keep
+    entries = "\n".join(f'\t\t[{json.dumps(n)}] = {1 if n in on else 0},' for n in sorted(names | on))
     config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text(f"return {{\n\tallowUserWidgets = true,\n\torder = {{\n{entries}\n\t}},\n}}\n")
 
@@ -86,7 +110,7 @@ def process(replay_id, report):
         for event in pipeline.download(str(BAR), missing):
             if event[0] == "progress":
                 report(event[2], event[1])
-    interface_off()
+    interface_off(extra_widgets())
     for event in pipeline.parse(CFG, demo):
         if event[0] == "progress":
             report(event[2], event[1])
