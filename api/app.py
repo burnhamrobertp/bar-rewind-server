@@ -171,7 +171,7 @@ def callback(event):
 # jobs ----------------------------------------------------------------------------------------------
 
 PUBLIC = ("id", "status", "stage", "pct", "created", "started", "finished", "heartbeat", "progress_at", "user", "map",
-          "duration_ms", "players", "size", "packed_size", "error", "attempts", "start_time")
+          "duration_ms", "players", "size", "packed_size", "error", "attempts", "start_time", "event_count")
 
 
 def all_jobs():
@@ -209,7 +209,8 @@ def stored(job):
 def public(job):
     fields = {k: (int(v) if hasattr(v, "as_integer_ratio") and not isinstance(v, bool) else v) for k, v in job.items() if k in PUBLIC}
 
-    return {**fields, "outdated": outdated(job), "has_log": bool(job.get("log"))}
+    return {**fields, "outdated": outdated(job), "has_log": bool(job.get("log")),
+            "events": json.loads(job["events"]) if job.get("events") else []}
 
 
 LOG_TAIL = 256 * 1024

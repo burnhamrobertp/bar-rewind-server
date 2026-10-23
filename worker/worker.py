@@ -22,6 +22,8 @@ HEARTBEAT = 30
 PROGRESS_EVERY = 10
 STALE = 300
 MAX_ATTEMPTS = 3
+# the events a job lists for the site; DynamoDB items stop at 400 KB
+EVENTS_LISTED = 200
 LOCAL_WORKER = "_worker_local"
 USER_AGENT = "bar-rewind-server (https://github.com/burnhamrobertp/bar-rewind-server)"
 
@@ -123,7 +125,7 @@ def local(replay_id):
     BAR.mkdir(parents=True, exist_ok=True)
     started = time.time()
     curves = process(replay_id, lambda stage, pct: print(f"{time.time() - started:6.0f}s {pct:3}% {stage}", flush=True))
-    print(f"{curves} {curves.stat().st_size >> 20} MB in {time.time() - started:.0f} s")
+    print(f"{curves} {curves.stat().st_size >> 20} MB in {time.time() - started:.0f} s, {len(pipeline.curves_events(curves))} events")
 
 
 # the queue -----------------------------------------------------------------------------------------
@@ -228,9 +230,11 @@ class Queue:
             self.s3.upload_file(str(packed), self.bucket, key, ExtraArgs={
                 "ContentEncoding": "gzip", "ContentType": "application/octet-stream",
                 "ContentDisposition": f'attachment; filename="{job_id}.curves"'})
+            events = pipeline.curves_events(curves)
             self.update(job_id, mine, status="done", stage="done", pct=100, finished=int(time.time()),
                         size=curves.stat().st_size, packed_size=packed.stat().st_size,
-                        curves_version=pipeline.curves_version(curves), curves_key=key)
+                        curves_version=pipeline.curves_version(curves), curves_key=key,
+                        event_count=len(events), events=json.dumps(events[:EVENTS_LISTED]))
             for old in {job.get("curves_key"), f"curves/{job_id}.curves"} - {None, key}:
                 self.s3.delete_object(Bucket=self.bucket, Key=old)
             curves.unlink()
