@@ -23,6 +23,11 @@ th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid var(--line
 th { color: var(--dim); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
 td.actions { white-space: nowrap; text-align: right; }
 .players { color: var(--dim); font-size: 12px; max-width: 320px; }
+.events { margin-top: 6px; color: var(--text); }
+.events summary { cursor: pointer; color: var(--warn); }
+.events ul { margin: 6px 0 0; padding-left: 18px; max-height: 240px; overflow-y: auto; }
+.events li { margin-bottom: 3px; }
+.events .at { color: var(--dim); font-variant-numeric: tabular-nums; }
 .badge { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: 12px; border: 1px solid; }
 .queued { color: var(--dim); } .running { color: var(--accent); } .done { color: var(--ok); } .failed { color: var(--bad); } .stalled { color: var(--warn); }
 .bar { height: 6px; background: #0c0e10; border-radius: 3px; margin-top: 6px; overflow: hidden; width: 180px; }

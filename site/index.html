@@ -105,10 +105,27 @@ function statusCell(job) {
   return cell;
 }
 
+// replays whose event list is open, kept across the list's refreshes
+const openEvents = new Set();
+
+// what widgets running in the parse recorded: a count per kind, opening to the list
+function events(job) {
+  if (!job.event_count || job.outdated) return null;
+  const kinds = {};
+  for (const e of job.events) kinds[e.kind] = (kinds[e.kind] || 0) + 1;
+  const counts = Object.entries(kinds).map(([k, n]) => `${k} ×${n}`).join(", ");
+  const list = el("ul", {}, ...job.events.map(e => el("li", {}, el("span", { class: "at" }, clock(e.f * 1000 / 30)), " ", e.text)));
+  if (job.event_count > job.events.length) list.append(el("li", { class: "note" }, `and ${job.event_count - job.events.length} more`));
+  const details = el("details", { class: "events" }, el("summary", {}, `${job.event_count} event${job.event_count === 1 ? "" : "s"}: ${counts}`), list);
+  details.open = openEvents.has(job.id);
+  details.ontoggle = () => details.open ? openEvents.add(job.id) : openEvents.delete(job.id);
+  return details;
+}
+
 function row(job) {
   const title = el("div", {}, el("a", { href: "https://www.bar-rts.com/replays/" + job.id, target: "_blank", rel: "noopener" }, job.map || job.id),
     job.duration_ms ? " · " + clock(job.duration_ms) : "");
-  const players = el("div", { class: "players" }, (job.players || []).join(", "));
+  const players = el("div", { class: "players" }, (job.players || []).join(", "), events(job));
   const actions = el("td", { class: "actions" });
   if (job.outdated) {
     const r = el("button", { class: "primary", title: "Parse it again for the current player" }, "Re-parse");
