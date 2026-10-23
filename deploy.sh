@@ -4,7 +4,8 @@
 # (default ../BAR-Rewind). The Discord client secret goes in SSM as /$STACK/discord-client-secret
 # (SecureString) before the first sign-in; DISCORD_CLIENT_SECRET sets it here instead. DEPLOY_PROFILE picks
 # the AWS profile (default "personal"; a shell's own AWS_PROFILE is ignored), AWS_REGION defaults to us-east-1
-# (CloudFront certificates must be there).
+# (CloudFront certificates must be there). CLOUD_WORKER=off stops Fargate parsing (only a local worker
+# parses), =on starts it again; left unset, the stack keeps what it had.
 set -euo pipefail
 cd "$(dirname "$0")"
 export AWS_PROFILE=${DEPLOY_PROFILE:-personal} AWS_REGION=${AWS_REGION:-us-east-1}
@@ -87,7 +88,7 @@ aws cloudformation deploy --stack-name "$STACK" --template-file template.yaml --
   --no-fail-on-empty-changeset --tags "project=$STACK" --parameter-overrides \
   "SiteDomain=$DOMAIN" "CertificateArn=$CERT" "VpcId=$VPC" "SubnetIds=$SUBNETS" \
   "CloudFrontPublicKey=$PUBLIC_KEY" "OriginSecret=$ORIGIN_SECRET" "AlertEmail=$EMAIL" "ImageTag=$TAG" "CurvesVersion=$CURVES_VERSION" \
-  "RoleIds=$ROLE_IDS" "UserIds=$USER_IDS"
+  "RoleIds=$ROLE_IDS" "UserIds=$USER_IDS" ${CLOUD_WORKER:+"CloudWorker=$CLOUD_WORKER"}
 BUCKET=$(output BucketName)
 REPO=$(output RepositoryUri)
 aws ssm put-parameter --name "/$STACK/site-url" --type String --overwrite --value "https://$DOMAIN" >/dev/null

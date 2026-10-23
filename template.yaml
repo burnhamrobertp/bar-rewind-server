@@ -43,6 +43,11 @@ Parameters:
   RetentionDays:
     Type: Number
     Default: 60
+  CloudWorker:
+    Type: String
+    Default: "on"
+    AllowedValues: ["on", "off"]
+    Description: '"off": only a local worker parses; queued jobs wait for one'
   ImageTag:
     Type: String
     Default: latest
@@ -283,6 +288,7 @@ Resources:
           SECURITY_GROUP: !Ref WorkerSecurityGroup
           KEY_PAIR_ID: !Ref SigningKey
           RETENTION_DAYS: !Ref RetentionDays
+          CLOUD_WORKER: !Ref CloudWorker
 
   ApiUrl:
     Type: AWS::Lambda::Url

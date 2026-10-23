@@ -237,7 +237,7 @@ def ensure_worker(jobs):
     if not any(j["status"] == "queued" for j in jobs):
         return
     local = TABLE.get_item(Key={"id": LOCAL_WORKER}).get("Item")
-    if local and now - int(local.get("seen", 0)) < LOCAL_FRESH:
+    if local and now - int(local.get("seen", 0)) < LOCAL_FRESH or os.environ.get("CLOUD_WORKER") == "off":
         return
     running = ECS.list_tasks(cluster=os.environ["CLUSTER"], family=os.environ["TASK_FAMILY"], desiredStatus="RUNNING")["taskArns"]
     if running:
