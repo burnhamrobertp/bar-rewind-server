@@ -23,7 +23,7 @@
   </div>
 
   <div class="panel" id="windows">
-    <h2>Windows</h2>
+    <h2>Windows <a class="other-os" href="#linux" data-show="linux">On Linux?</a></h2>
     <p><a class="button primary" href="bar-rewind.exe" download>Download bar-rewind.exe</a></p>
     <ol class="steps">
       <li>Your browser may hold the download back because few people download this file. Keep it:
@@ -42,7 +42,7 @@
   </div>
 
   <div class="panel" id="linux">
-    <h2>Linux</h2>
+    <h2>Linux <a class="other-os" href="#windows" data-show="windows">On Windows?</a></h2>
     <p><a class="button primary" href="bar-rewind-linux" download="bar-rewind">Download bar-rewind</a></p>
     <ol class="steps">
       <li>Move it somewhere it can stay and make it runnable:
@@ -56,6 +56,13 @@
     <p class="note">To remove it: <code>~/.local/bin/bar-rewind --uninstall</code>, then delete the file.</p>
   </div>
 
+  <div class="panel" id="widgets" hidden>
+    <h2>Widgets</h2>
+    <p>Widgets for BAR Rewind playback. Save them into <code>LuaUI/Widgets</code> in BAR's data folder (the folder
+      the player found), then start a replay; turn them on or off in BAR's widget list (F11).</p>
+    <ul id="widget-list"></ul>
+  </div>
+
   <div class="panel">
     <h2>If BAR isn't found</h2>
     <p>The player looks where BAR's installers put its data folder (the one with <code>engine/</code>,
@@ -66,5 +73,33 @@
       <code>%LOCALAPPDATA%\bar-rewind</code> or <code>~/.cache/bar-rewind</code>.</p>
   </div>
 </main>
+<script>
+// one system's steps at a time: the visitor's own, with a link to the other
+function show(os) {
+  for (const id of ["windows", "linux"]) document.getElementById(id).hidden = id !== os;
+}
+const platform = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || navigator.userAgent;
+show(location.hash === "#linux" || location.hash === "#windows" ? location.hash.slice(1)
+  : /linux|x11/i.test(platform) && !/android/i.test(navigator.userAgent) ? "linux" : "windows");
+for (const a of document.querySelectorAll(".other-os")) a.onclick = e => { e.preventDefault(); show(a.dataset.show); history.replaceState(null, "", "#" + a.dataset.show); };
+
+// files for signed-in users: the panel stays hidden for everyone else
+(async () => {
+  const r = await fetch("api/downloads", { credentials: "same-origin" }).catch(() => null);
+  if (!r || !r.ok) return;
+  const { files } = await r.json();
+  if (!files.length) return;
+  const list = document.getElementById("widget-list");
+  for (const f of files) {
+    const item = document.createElement("li");
+    const link = document.createElement("a");
+    link.href = "api/downloads/" + encodeURIComponent(f.name);
+    link.textContent = f.name;
+    item.append(link, ` (${Math.max(1, Math.round(f.size / 1024))} KB)`, f.description ? " - " + f.description : "");
+    list.append(item);
+  }
+  document.getElementById("widgets").hidden = false;
+})();
+</script>
 </body>
 </html>
