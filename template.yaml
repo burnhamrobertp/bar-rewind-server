@@ -238,7 +238,7 @@ Resources:
               # HeadObject on a missing key answers 403 instead of 404 without ListBucket
               - Effect: Allow
                 Action: s3:GetObject
-                Resource: [!Sub "${Bucket.Arn}/curves/*", !Sub "${Bucket.Arn}/logs/*"]
+                Resource: [!Sub "${Bucket.Arn}/curves/*", !Sub "${Bucket.Arn}/logs/*", !Sub "${Bucket.Arn}/downloads/*"]
               - Effect: Allow
                 Action: s3:ListBucket
                 Resource: !GetAtt Bucket.Arn

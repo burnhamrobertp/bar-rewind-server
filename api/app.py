@@ -213,6 +213,34 @@ def public(job):
             "events": json.loads(job["events"]) if job.get("events") else []}
 
 
+# files for signed-in users only, uploaded to the bucket by hand: downloads/<name>, described by its
+# x-amz-meta-description
+DOWNLOADS = "downloads/"
+
+
+def list_downloads():
+    bucket = os.environ["BUCKET"]
+    files = []
+    for obj in S3.list_objects_v2(Bucket=bucket, Prefix=DOWNLOADS).get("Contents", []):
+        name = obj["Key"][len(DOWNLOADS):]
+        if name and "/" not in name:
+            meta = S3.head_object(Bucket=bucket, Key=obj["Key"]).get("Metadata", {})
+            files.append({"name": name, "size": obj["Size"], "description": meta.get("description", "")})
+
+    return respond(200, {"files": files})
+
+
+def download(name):
+    try:
+        obj = S3.get_object(Bucket=os.environ["BUCKET"], Key=DOWNLOADS + name)
+    except S3.exceptions.NoSuchKey:
+        return respond(404, {"error": "no such file"})
+
+    return {"statusCode": 200, "isBase64Encoded": True, "body": base64.b64encode(obj["Body"].read()).decode(),
+            "headers": {"content-type": "application/octet-stream", "cache-control": "no-store",
+                        "content-disposition": f'attachment; filename="{name}"'}}
+
+
 LOG_TAIL = 256 * 1024
 
 
@@ -410,5 +438,10 @@ def route(event, method, path, user):
     m = re.fullmatch(r"/api/jobs/([0-9a-f]{32})/(watch|log)", path)
     if m and method == "GET":
         return watch(m.group(1)) if m.group(2) == "watch" else job_log(m.group(1))
+    if path == "/api/downloads" and method == "GET":
+        return list_downloads()
+    m = re.fullmatch(r"/api/downloads/([\w.-]+)", path)
+    if m and method == "GET":
+        return download(m.group(1))
 
     return respond(404, {"error": "no such endpoint"})
