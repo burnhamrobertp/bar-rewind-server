@@ -15,62 +15,42 @@
 <main style="max-width: 820px">
   <div class="panel">
     <h2>The player</h2>
-    <p>Watch on a parsed replay opens it in your own BAR install, through the BAR Rewind player. Set it up once:
-      after that, Watch starts BAR on the replay, with the timeline to scrub, rewind and change speed.</p>
-    <p class="note">Needs BAR installed. The player adds the BAR Rewind game to BAR's data folder
-      (<code>games/barrewind.sdd</code>), downloads a replay's engine, game and map with BAR's own downloader
-      when they're missing, then starts BAR. It changes nothing else in BAR.</p>
+    <p>Watch opens a parsed replay in your own BAR install through the BAR Rewind player. Set it up once.</p>
   </div>
 
   <div class="panel" id="windows">
     <h2>Windows <a class="other-os" href="#linux" data-show="linux">On Linux?</a></h2>
     <p><a class="button primary" href="bar-rewind.exe" download>Download bar-rewind.exe</a></p>
     <ol class="steps">
-      <li>Your browser may hold the download back because few people download this file. Keep it:
-        in Chrome or Edge open the downloads list, then <b>...</b> &gt; <b>Keep</b> (Edge: <b>Keep anyway</b>).</li>
-      <li>Move it somewhere it can stay, for example <code>Documents\BAR Rewind</code>. Watch links open the copy
-        you ran last.</li>
-      <li>Double-click it. Windows may say <b>Windows protected your PC</b>, because the player isn't signed:
-        <b>More info</b> &gt; <b>Run anyway</b>.</li>
-      <li>A window confirms it's set up and shows the BAR data folder it found. Press Enter to close it.</li>
-      <li>Click Watch on a parsed replay. The first time, the browser asks to open BAR Rewind: allow it
-        (and tick "always allow" to skip the question next time).</li>
-      <li>The player then asks whether to trust downloads from this site. Type <code>y</code> and Enter; it
-        remembers, and won't ask again for this site.</li>
+      <li>Keep it somewhere it can stay. If the browser holds the download back, choose <b>Keep</b>.</li>
+      <li>Run it once. If Windows warns that it protected your PC: <b>More info</b> &gt; <b>Run anyway</b>.</li>
+      <li>Click Watch on a replay, let the browser open BAR Rewind, and type <code>y</code> when the player asks
+        to trust this site.</li>
     </ol>
-    <p class="note">To remove it: run <code>bar-rewind.exe --uninstall</code> from a terminal, then delete the file.</p>
+    <p class="note">To remove it: <code>bar-rewind.exe --uninstall</code>, then delete the file.</p>
   </div>
 
   <div class="panel" id="linux">
     <h2>Linux <a class="other-os" href="#windows" data-show="windows">On Windows?</a></h2>
     <p><a class="button primary" href="bar-rewind-linux" download="bar-rewind">Download bar-rewind</a></p>
     <ol class="steps">
-      <li>Move it somewhere it can stay and make it runnable:
-        <code>mkdir -p ~/.local/bin &amp;&amp; mv ~/Downloads/bar-rewind ~/.local/bin/ &amp;&amp; chmod +x ~/.local/bin/bar-rewind</code></li>
-      <li>Run it once in a terminal: <code>~/.local/bin/bar-rewind</code>. It registers itself for your user
-        (a desktop entry in <code>~/.local/share/applications</code>); it needs <code>xdg-utils</code>, which most
-        desktops have.</li>
-      <li>Click Watch on a parsed replay. The player opens in a terminal window, so downloads and errors show there.
-        The first time, it asks whether to trust downloads from this site: type <code>y</code> and Enter.</li>
+      <li>Install and register it (needs <code>xdg-utils</code>):
+        <code>mkdir -p ~/.local/bin &amp;&amp; mv ~/Downloads/bar-rewind ~/.local/bin/ &amp;&amp; chmod +x ~/.local/bin/bar-rewind &amp;&amp; ~/.local/bin/bar-rewind</code></li>
+      <li>Click Watch on a replay, and type <code>y</code> when the player asks to trust this site.</li>
     </ol>
     <p class="note">To remove it: <code>~/.local/bin/bar-rewind --uninstall</code>, then delete the file.</p>
   </div>
 
   <div class="panel" id="widgets" hidden>
     <h2>Widgets</h2>
-    <p>Widgets for BAR Rewind playback. Save them into <code>LuaUI/Widgets</code> in BAR's data folder (the folder
-      the player found), then start a replay; turn them on or off in BAR's widget list (F11).</p>
     <ul id="widget-list"></ul>
   </div>
 
   <div class="panel">
-    <h2>If BAR isn't found</h2>
-    <p>The player looks where BAR's installers put its data folder (the one with <code>engine/</code>,
-      <code>maps/</code> and <code>demos/</code> in it). For anywhere else, put
-      <code>{"bar_data": "&lt;BAR's data folder&gt;"}</code> in <code>%APPDATA%\bar-rewind.json</code> (Windows) or
-      <code>~/.config/bar-rewind.json</code> (Linux). The same file lists the sites you trusted
-      (<code>trusted_hosts</code>); remove one there to be asked again. Downloaded replays and BAR's log from the last Watch are in
-      <code>%LOCALAPPDATA%\bar-rewind</code> or <code>~/.cache/bar-rewind</code>.</p>
+    <h2>Troubleshooting</h2>
+    <p>BAR not found: put <code>{"bar_data": "&lt;BAR's data folder&gt;"}</code> in
+      <code>%APPDATA%\bar-rewind.json</code> (Windows) or <code>~/.config/bar-rewind.json</code> (Linux).
+      The last Watch's log is in <code>%LOCALAPPDATA%\bar-rewind</code> or <code>~/.cache/bar-rewind</code>.</p>
   </div>
 </main>
 <script>
@@ -95,7 +75,7 @@ for (const a of document.querySelectorAll(".other-os")) a.onclick = e => { e.pre
     const link = document.createElement("a");
     link.href = "api/downloads/" + encodeURIComponent(f.name);
     link.textContent = f.name;
-    item.append(link, ` (${Math.max(1, Math.round(f.size / 1024))} KB)`, f.description ? " - " + f.description : "");
+    item.append(link, f.description ? " - " + f.description : "");
     list.append(item);
   }
   document.getElementById("widgets").hidden = false;
