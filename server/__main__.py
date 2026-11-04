@@ -15,9 +15,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def handle_any(self):
         url = urllib.parse.urlsplit(self.path)
+        if self.headers.get("transfer-encoding"):
+            self.close_connection = True
+
+            return self.send(respond(411, {"error": "send a Content-Length, not a chunked body"}))
         length = self.headers.get("content-length") or "0"
         if not length.isdigit() or int(length) > MAX_BODY:
             self.close_connection = True
+
             return self.send(respond(413, {"error": "too large"}))
         body = self.rfile.read(int(length)) if int(length) else b""
         headers = {k.lower(): v for k, v in self.headers.items()}

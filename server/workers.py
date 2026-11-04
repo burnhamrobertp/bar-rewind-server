@@ -7,7 +7,7 @@
 #   POST /api/worker/jobs/<id>/progress {stage, pct, peak_mem_mb}   also the job's heartbeat; 409 once it isn't theirs
 #   POST /api/worker/jobs/<id>/uploads                 fresh upload URLs, for an upload that outlives the first
 #   POST /api/worker/jobs/<id>/done {size, packed_size, curves_version, event_count, events, peak_mem_mb}
-#   POST /api/worker/jobs/<id>/fail {error, peak_mem_mb}
+#   POST /api/worker/jobs/<id>/fail {error, peak_mem_mb, out_of_memory}
 # and for signed-in users:
 #   GET  /api/link/<code>, POST /api/link {code}       what is asking to enroll, and approving it
 #   GET  /api/workers                                  their workers (an admin's: everyone's)
@@ -191,7 +191,8 @@ def claim(req, worker):
     now = int(time.time())
     ratio = mem_per_size(db.rows("SELECT duration_ms, players, peak_mem_mb FROM jobs WHERE status = 'done' AND peak_mem_mb > 0 "
                                  "ORDER BY finished DESC LIMIT 500"))
-    biggest = db.one("SELECT max(mem_mb) AS m FROM workers WHERE paused = 0")["m"] or 0
+    online = db.one("SELECT max(mem_mb) AS m FROM workers WHERE paused = 0 AND last_seen > ?", now - STALE)["m"] or 0
+    biggest = max(online, worker["mem_mb"])
     with db.tx() as c:
         if c.execute("SELECT 1 FROM jobs WHERE status = 'running' AND worker = ?", (worker["id"],)).fetchone():
             return respond(204)
@@ -285,12 +286,21 @@ def fail(req, worker, replay_id):
     if job is None:
         return not_yours()
     has_log = storage.store.size(job["log_key"]) is not None
+    peak = max(job["peak_mem_mb"] or 0, number(body, "peak_mem_mb") or 0) or None
+    error = short(body, "error", 2000) or "the worker gave no reason"
     with db.tx() as c:
         if mine(c, worker, replay_id) is None:
             return not_yours()
+        # too big for this machine is no fault of its own: a bigger one tries it
+        if body.get("out_of_memory") is True and job["attempts"] < MAX_ATTEMPTS:
+            db.update(c, "jobs", "id", replay_id, {
+                "status": "queued", "stage": "waiting for a worker with more memory", "worker": None, "peak_mem_mb": peak,
+                "too_small_mb": max(job["too_small_mb"], worker["mem_mb"]), "log_key": job["log_key"] if has_log else None})
+            db.update(c, "workers", "id", worker["id"], {"last_seen": now})
+
+            return respond(200, {})
         db.update(c, "jobs", "id", replay_id, {
-            "status": "failed", "stage": "failed", "finished": now, "error": short(body, "error", 2000) or "the worker gave no reason",
-            "peak_mem_mb": max(job["peak_mem_mb"] or 0, number(body, "peak_mem_mb") or 0) or None,
+            "status": "failed", "stage": "failed", "finished": now, "error": error, "peak_mem_mb": peak,
             "log_key": job["log_key"] if has_log else None})
         failures = worker["failures"] + 1
         fields = {"failures": failures, "last_seen": now}

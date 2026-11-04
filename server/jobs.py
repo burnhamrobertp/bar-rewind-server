@@ -20,26 +20,27 @@ def curves_version():
     return int(pinned["value"]) if pinned and pinned["value"].isdigit() else settings.number("curves-version", 0)
 
 
-def outdated(job):
-    return job["status"] == "done" and (job["curves_version"] or 0) < curves_version()
+def outdated(job, version=None):
+    return job["status"] == "done" and (job["curves_version"] or 0) < (curves_version() if version is None else version)
 
 
 def stored(job):
     return bool(job["curves_key"]) and storage.store.size(job["curves_key"]) is not None
 
 
-def public(job):
+def public(job, version=None):
     fields = {k: job[k] for k in PUBLIC}
     fields["players"] = json.loads(job["players"])
 
-    return {**fields, "outdated": outdated(job), "has_log": bool(job["log_key"]),
+    return {**fields, "outdated": outdated(job, version), "has_log": bool(job["log_key"]),
             "events": json.loads(job["events"]) if job["events"] else []}
 
 
 def list_jobs(req, user):
     jobs = db.rows("SELECT * FROM jobs ORDER BY created DESC")
+    version = curves_version()
 
-    return respond(200, {"jobs": [public(j) for j in jobs]})
+    return respond(200, {"jobs": [public(j, version) for j in jobs]})
 
 
 def submit(req, user):
@@ -94,11 +95,15 @@ def watch(req, user, replay_id):
 def job_log(req, user, replay_id):
     """Head and tail of the latest log: the worker's account comes first, failures show at the end"""
     job = db.one("SELECT * FROM jobs WHERE id = ?", replay_id)
-    if not job or not job["log_key"]:
+    size = storage.store.size(job["log_key"]) if job and job["log_key"] else None
+    if size is None:
         return respond(404, {"error": "no log for that replay yet"})
-    data = storage.store.read(job["log_key"])
-    if len(data) > 2 * LOG_TAIL:
-        data = data[:LOG_TAIL // 4] + b"\n\n[... %d bytes left out ...]\n\n" % (len(data) - LOG_TAIL - LOG_TAIL // 4) + data[-LOG_TAIL:]
+    if size > 2 * LOG_TAIL:
+        head = storage.store.read(job["log_key"], 0, LOG_TAIL // 4 - 1)
+        tail = storage.store.read(job["log_key"], size - LOG_TAIL)
+        data = head + b"\n\n[... %d bytes left out ...]\n\n" % (size - LOG_TAIL - LOG_TAIL // 4) + tail
+    else:
+        data = storage.store.read(job["log_key"])
 
     return text(200, data.decode(errors="replace"))
 

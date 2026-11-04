@@ -83,6 +83,7 @@ def worker_route(req):
     m = re.fullmatch(r"/api/worker/jobs/([0-9a-f]{32})/(progress|uploads|done|fail)", req.path)
     if m:
         handler = {"progress": workers.progress, "uploads": workers.fresh_uploads, "done": workers.finish, "fail": workers.fail}[m.group(2)]
+
         return handler(req, worker, m.group(1))
 
     return respond(404, {"error": "no such endpoint"})

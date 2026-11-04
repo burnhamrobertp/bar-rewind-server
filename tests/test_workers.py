@@ -113,6 +113,7 @@ class Claim(WorkerTest):
         auth, _, _ = self.enroll(mem_mb=8000)
         big, _, _ = self.enroll(mem_mb=65536, owner="2")
         self.enroll(mem_mb=131072, owner="3")
+        db.conn().execute("UPDATE workers SET last_seen = ? WHERE mem_mb = 131072", (int(time.time()),))
         for i in range(4):
             self.queue(f"{i:032x}", status="done", peak_mem_mb=20000, finished=i)
         self.assertIsNone(workers.mem_per_size(db.rows("SELECT * FROM jobs WHERE status = 'done'")))
@@ -123,8 +124,10 @@ class Claim(WorkerTest):
         self.assertEqual(204, self.worker_call(auth, "/api/worker/claim").status)
         self.assertEqual(200, self.worker_call(big, "/api/worker/claim").status)
 
-    def test_a_job_too_big_for_every_estimate_still_goes_to_the_biggest_machine(self):
+    def test_a_job_too_big_for_every_estimate_still_goes_to_the_biggest_machine_online(self):
         auth, _, _ = self.enroll(mem_mb=8000)
+        self.enroll(mem_mb=65536, owner="2")
+        db.conn().execute("UPDATE workers SET last_seen = ? WHERE mem_mb = 65536", (int(time.time()) - workers.STALE - 1,))
         for i in range(5):
             self.queue(f"{i:032x}", status="done", peak_mem_mb=900000, finished=i)
         self.queue()
@@ -176,6 +179,16 @@ class Reports(WorkerTest):
         self.assertEqual([{"f": 30, "kind": "death", "player": "", "text": "x" * 300}], json.loads(job["events"]))
         self.assertEqual(409, self.worker_call(auth, f"/api/worker/jobs/{REPLAY}/done", body).status)
 
+    def test_running_out_of_memory_hands_the_job_to_a_bigger_machine(self):
+        auth, worker_id, _, _, _ = self.claimed()
+        self.worker_call(auth, f"/api/worker/jobs/{REPLAY}/fail", {"error": "the engine ran out of memory", "out_of_memory": True})
+        job = db.one("SELECT * FROM jobs")
+        self.assertEqual(("queued", None, 32768), (job["status"], job["worker"], job["too_small_mb"]))
+        self.assertEqual(0, db.one("SELECT failures FROM workers")["failures"])
+        db.conn().execute("UPDATE jobs SET status = 'running', worker = ?, attempts = ?", (worker_id, workers.MAX_ATTEMPTS))
+        self.worker_call(auth, f"/api/worker/jobs/{REPLAY}/fail", {"out_of_memory": True})
+        self.assertEqual("failed", db.one("SELECT status FROM jobs")["status"])
+
     def test_failing_too_often_in_a_row_pauses_the_worker(self):
         auth, worker_id, _, _, _ = self.claimed()
         self.worker_call(auth, f"/api/worker/jobs/{REPLAY}/fail", {"error": "the engine crashed"})
@@ -200,6 +213,7 @@ class Tidy(WorkerTest):
         db.conn().execute("UPDATE jobs SET status = 'running', attempts = ?, heartbeat = 0", (workers.MAX_ATTEMPTS,))
         workers.requeue_stale(now)
         self.assertEqual("failed", db.one("SELECT status FROM jobs")["status"])
+        self.assertEqual(404, self.call("GET", f"/api/jobs/{REPLAY}/log", cookie=self.session()).status)
 
     def test_owners_who_lose_access_have_their_workers_paused(self):
         for owner in "123":

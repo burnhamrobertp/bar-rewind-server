@@ -33,8 +33,10 @@ class R2:
                 return None
             raise
 
-    def read(self, key):
-        return self.s3.get_object(Bucket=self.bucket, Key=key)["Body"].read()
+    def read(self, key, first=0, last=None):
+        span = {} if first == 0 and last is None else {"Range": f"bytes={first}-" + ("" if last is None else str(last))}
+
+        return self.s3.get_object(Bucket=self.bucket, Key=key, **span)["Body"].read()
 
     def delete(self, key):
         self.s3.delete_object(Bucket=self.bucket, Key=key)

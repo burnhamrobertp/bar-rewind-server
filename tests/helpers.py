@@ -21,8 +21,8 @@ class FakeStore:
     def size(self, key):
         return len(self.objects[key]) if key in self.objects else None
 
-    def read(self, key):
-        return self.objects[key]
+    def read(self, key, first=0, last=None):
+        return self.objects[key][first:None if last is None else last + 1]
 
     def delete(self, key):
         self.objects.pop(key, None)
