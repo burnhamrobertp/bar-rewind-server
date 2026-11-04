@@ -1,9 +1,9 @@
 # python -m server: serves the site and API on HOST:PORT (default 127.0.0.1:8080, where cloudflared
-# reaches it), keeping state in $DB, and tidies the jobs once a minute.
+# reaches it), keeping state in $DB, and tidies jobs and workers once a minute.
 import os, sys, threading, time, traceback, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import app, db, jobs, storage
+from . import app, db, storage, workers
 from .web import Request, respond
 
 MAX_BODY = 1 << 20
@@ -51,7 +51,7 @@ def tidy():
     while True:
         time.sleep(60)
         try:
-            jobs.expire(int(time.time()))
+            workers.tidy(int(time.time()))
         except Exception:
             traceback.print_exc()
 

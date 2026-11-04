@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BAR Rewind workers</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1><a href="./" style="color: inherit; text-decoration: none">BAR Rewind</a></h1>
+  <span class="grow"></span>
+  <a class="button" href="./">Back to replays</a>
+</header>
+<main>
+  <div class="panel">
+    <h2>Workers</h2>
+    <p class="note">Machines that parse queued replays. To add one, download the worker from its
+      <a href="https://github.com/burnhamrobertp/bar-rewind-worker/releases/latest">latest release</a> and run it:
+      it opens this site to be approved. If Windows warns that it protected your PC: <b>More info</b> &gt; <b>Run anyway</b>.</p>
+  </div>
+  <div class="panel">
+    <table>
+      <thead><tr><th>Worker</th><th class="hide-narrow">Machine</th><th>Status</th><th></th></tr></thead>
+      <tbody id="workers"><tr><td colspan="4" class="note">Loading...</td></tr></tbody>
+    </table>
+    <p class="error" id="error"></p>
+  </div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const OFFLINE_AFTER = 180;
+
+function el(tag, attrs = {}, ...children) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) k === "class" ? e.className = v : e.setAttribute(k, v);
+  for (const c of children) if (c != null) e.append(c);
+  return e;
+}
+
+function ago(t) {
+  const s = Math.max(0, Math.round(Date.now() / 1000 - t));
+  return s < 60 ? s + "s ago" : s < 3600 ? Math.floor(s / 60) + "m ago" : s < 86400 ? Math.floor(s / 3600) + "h ago" : Math.floor(s / 86400) + "d ago";
+}
+
+async function api(path, options) {
+  const r = await fetch(path, { credentials: "same-origin", ...options });
+  const body = await r.json().catch(() => ({}));
+  if (r.status === 401) { location.href = "./"; throw new Error("sign in"); }
+  if (!r.ok) throw new Error(body.error || r.statusText);
+  return body;
+}
+
+async function change(id, body) {
+  try {
+    await api("api/workers/" + id, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  } catch (e) { $("error").textContent = e.message; }
+  refresh();
+}
+
+function row(w) {
+  const online = w.last_seen && Date.now() / 1000 - w.last_seen < OFFLINE_AFTER;
+  const label = w.paused ? "paused" : !online ? "offline" : w.job ? "parsing" : "idle";
+  const status = el("td", {}, el("span", { class: "badge " + (w.paused || !online ? "stalled" : w.job ? "running" : "done") }, label),
+    el("div", { class: "stage" }, w.pause_reason || (w.last_seen ? "seen " + ago(w.last_seen) : "never seen")));
+  const machine = el("td", { class: "hide-narrow" }, `${w.os || "?"}, ${w.mem_mb ? Math.round(w.mem_mb / 1024) + " GB" : "?"}, ${w.cpus || "?"} cores`,
+    el("div", { class: "stage" }, `worker ${w.version || "?"}, parser ${w.parser_version || "?"}` +
+      (w.disk_free_mb ? `, ${Math.round(w.disk_free_mb / 1024)} GB free` : "") + (w.max_minutes ? `, replays up to ${w.max_minutes} min` : "")));
+  const pause = el("button", {}, w.paused ? "Resume" : "Pause");
+  pause.onclick = () => change(w.id, { paused: !w.paused });
+  const limit = el("button", { title: "The longest replay this worker takes" }, "Limit");
+  limit.onclick = () => {
+    const minutes = prompt("Longest replay this worker takes, in minutes (empty for no limit):", w.max_minutes || "");
+    if (minutes !== null) change(w.id, { max_minutes: minutes.trim() ? Number(minutes) : null });
+  };
+  const remove = el("button", {}, "Remove");
+  remove.onclick = async () => {
+    if (!confirm(`Remove ${w.name}? It stops parsing and has to be enrolled again to come back.`)) return;
+    try { await api("api/workers/" + w.id, { method: "DELETE" }); } catch (e) { $("error").textContent = e.message; }
+    refresh();
+  };
+  return el("tr", {}, el("td", {}, w.name, el("div", { class: "stage" }, w.owner_name)), machine, status,
+    el("td", { class: "actions" }, pause, " ", limit, " ", remove));
+}
+
+async function refresh() {
+  try {
+    const { workers } = await api("api/workers");
+    $("workers").replaceChildren(...(workers.length ? workers.map(row) : [el("tr", {}, el("td", { colspan: 4, class: "note" }, "No workers yet."))]));
+  } catch (e) { $("error").textContent = e.message; }
+}
+
+refresh();
+setInterval(() => { if (!document.hidden) refresh(); }, 15000);
+</script>
+</body>
+</html>

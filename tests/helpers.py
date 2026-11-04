@@ -35,6 +35,7 @@ class Outside:
         self.members = {}
         self.replays = {}
         self.calls = []
+        self.member_status = None
 
     def member(self, token, uid, name="Mod", roles=(ROLE,)):
         self.members[token] = {"user": {"id": uid, "username": name.lower()}, "nick": name, "roles": list(roles)}
@@ -48,10 +49,14 @@ class Outside:
         self.calls.append(url)
         if url.endswith("/oauth2/token"):
             form = dict(urllib.parse.parse_qsl(data.decode()))
-            if form.get("code") == "good" or form.get("grant_type") == "refresh_token":
-                return 200, {"access_token": "tok-" + form.get("code", "refreshed"), "refresh_token": "ref", "expires_in": 3600}
+            if form.get("code") == "good":
+                return 200, {"access_token": "tok-good", "refresh_token": "ref", "expires_in": 3600}
+            if form.get("grant_type") == "refresh_token":
+                return 200, {"access_token": "tok-" + form["refresh_token"], "refresh_token": form["refresh_token"] + "+", "expires_in": 3600}
             return 400, None
         if "/users/@me/guilds/" in url:
+            if self.member_status:
+                return self.member_status, None
             member = self.members.get((headers or {}).get("Authorization", "").removeprefix("Bearer "))
             return (200, member) if member else (404, None)
         if url.startswith("https://api.bar-rts.com/replays/"):

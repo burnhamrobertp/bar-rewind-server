@@ -15,7 +15,9 @@ PUBLIC = ("id", "status", "stage", "pct", "created", "started", "finished", "hea
 
 def curves_version():
     """The .curves format the pinned parser writes: jobs parsed in an older one are parsed again"""
-    return settings.number("curves-version", 0)
+    pinned = db.one("SELECT value FROM pins WHERE key = 'curves_version'")
+
+    return int(pinned["value"]) if pinned and pinned["value"].isdigit() else settings.number("curves-version", 0)
 
 
 def outdated(job):

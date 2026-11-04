@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BAR Rewind: approve a worker</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1><a href="./" style="color: inherit; text-decoration: none">BAR Rewind</a></h1>
+  <span class="grow"></span>
+  <a class="button" href="workers.html">Workers</a>
+</header>
+<main style="max-width: 640px">
+  <div class="panel" id="ask" hidden>
+    <h2>Approve this worker?</h2>
+    <p>A BAR Rewind worker is asking to parse replays for this site under your name. Approve it only if it's
+      running on a machine you set up just now, and the code below matches the one it shows.</p>
+    <table><tbody id="details"></tbody></table>
+    <p style="margin-top: 14px"><button class="primary" id="approve">Approve</button> <a class="button" href="./">Not mine</a></p>
+  </div>
+  <div class="panel" id="done" hidden>
+    <h2>Approved</h2>
+    <p>The worker picks this up within a few seconds and starts taking replays. Pause or remove it any time
+      on the <a href="workers.html">workers page</a>.</p>
+  </div>
+  <div class="panel" id="signin" hidden>
+    <p>Sign in with Discord to approve the worker.</p>
+    <a class="button primary" id="signin-link" href="api/login">Sign in with Discord</a>
+  </div>
+  <p class="error" id="error"></p>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const code = (new URLSearchParams(location.search).get("code") || "").trim();
+
+async function api(path, options) {
+  const r = await fetch(path, { credentials: "same-origin", ...options });
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw Object.assign(new Error(body.error || r.statusText), { status: r.status });
+  return body;
+}
+
+function row(label, value) {
+  const tr = document.createElement("tr");
+  for (const text of [label, value]) { const td = document.createElement("td"); td.textContent = text; tr.append(td); }
+  return tr;
+}
+
+(async () => {
+  try {
+    const w = await api("api/link/" + encodeURIComponent(code));
+    $("details").append(row("Code", w.code), row("Name", w.name), row("System", w.os || "?"),
+      row("Memory", w.mem_mb ? Math.round(w.mem_mb / 1024) + " GB" : "?"), row("CPU cores", w.cpus || "?"));
+    $("ask").hidden = false;
+  } catch (e) {
+    if (e.status === 401) {
+      // the sign-in comes back to the front page: it sends people with a code waiting back here
+      sessionStorage.setItem("link-code", code);
+      $("signin").hidden = false;
+    } else $("error").textContent = e.message;
+  }
+})();
+
+$("approve").onclick = async () => {
+  $("approve").disabled = true;
+  try {
+    await api("api/link", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code }) });
+    $("ask").hidden = true;
+    $("done").hidden = false;
+  } catch (e) { $("error").textContent = e.message; $("approve").disabled = false; }
+};
+</script>
+</body>
+</html>

@@ -11,6 +11,7 @@
   <h1>BAR Rewind</h1>
   <span class="grow"></span>
   <a class="button" href="player.html">Get the player</a>
+  <a class="button" href="workers.html">Workers</a>
   <span id="who"></span>
 </header>
 <main>
@@ -180,6 +181,12 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden && !$
 (async () => {
   try {
     const me = await api("api/me");
+    const linking = sessionStorage.getItem("link-code");
+    if (linking) {
+      sessionStorage.removeItem("link-code");
+      location.href = "link.html?code=" + encodeURIComponent(linking);
+      return;
+    }
     $("who").replaceChildren(me.name + " · ", el("a", { href: "api/logout" }, "sign out"));
     $("signin").hidden = true;
     $("app").hidden = false;

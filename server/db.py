@@ -31,9 +31,45 @@ CREATE TABLE IF NOT EXISTS jobs (
     log_key TEXT,
     event_count INTEGER,
     events TEXT,
-    peak_mem_mb INTEGER
+    peak_mem_mb INTEGER,
+    too_small_mb INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS jobs_status ON jobs (status, created);
+
+CREATE TABLE IF NOT EXISTS workers (
+    id TEXT PRIMARY KEY,
+    owner_uid TEXT NOT NULL,
+    owner_name TEXT NOT NULL,
+    name TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    created INTEGER NOT NULL,
+    last_seen INTEGER,
+    mem_mb INTEGER NOT NULL DEFAULT 0,
+    mem_free_mb INTEGER,
+    cpus INTEGER,
+    disk_free_mb INTEGER,
+    os TEXT NOT NULL DEFAULT '',
+    version TEXT NOT NULL DEFAULT '',
+    parser_version TEXT NOT NULL DEFAULT '',
+    paused INTEGER NOT NULL DEFAULT 0,
+    pause_reason TEXT,
+    max_minutes INTEGER,
+    failures INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS enrollments (
+    user_code TEXT PRIMARY KEY,
+    device_hash TEXT NOT NULL UNIQUE,
+    expires INTEGER NOT NULL,
+    info TEXT NOT NULL,
+    worker_id TEXT,
+    token TEXT
+);
+
+CREATE TABLE IF NOT EXISTS pins (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS users (
     uid TEXT PRIMARY KEY,
