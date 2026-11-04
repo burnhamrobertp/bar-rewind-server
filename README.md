@@ -17,7 +17,8 @@ worker, player --> R2               presigned uploads and downloads only: nobody
 SQLite --Litestream--> R2           continuous backup, restored on a fresh box
 ```
 
-- A worker enrolls once: it shows a code and opens the site, where its owner approves it. After that it
+- A worker enrolls once: it picks a random id (a UUID), shows a code and opens the site, where its owner
+  approves it. The site lists workers by that id and the Discord account that approved them. After that it
   needs no settings of its own: the server tells it what to run (the pinned parser and worker releases),
   whether it's paused and the longest replay it takes.
 - A worker gets the oldest queued job that fits it: not longer than its limit, and, once five parses have
@@ -25,6 +26,8 @@ SQLite --Litestream--> R2           continuous backup, restored on a fresh box
   queue, preferring a machine with more memory, up to 3 tries.
 - A worker that fails 5 parses in a row pauses. One whose owner loses their Discord role pauses at the next
   check, every 6 hours.
+- Whoever queued a job, or an admin, can cancel it while it waits or runs; a worker parsing it stops at
+  its next report.
 - Queueing a replay that is already parsed returns it as is, unless it failed, its file has expired, or it
   was parsed in an older .curves format than the pinned parser writes.
 - Parsed replays are stored gzipped and served with `Content-Encoding: gzip`, which the player unpacks.
@@ -50,12 +53,12 @@ R2_BUCKET=... R2_ACCESS_KEY_ID=... R2_SECRET_ACCESS_KEY=... ./deploy.sh you@exam
 The secrets go into SSM, so later runs need only `./deploy.sh you@example.com`. A deploy ships the
 commit checked out here, pushed first: the box fetches it from GitHub. Who may sign in is `ROLE_IDS`
 (Discord roles) and `USER_IDS` (Discord users), comma-separated, set at the top of `deploy.sh` or in the
-environment; `ADMIN_IDS` may pin releases. `./teardown.sh` deletes the box and its settings; the R2 bucket
+environment. `ADMIN_IDS` (Discord users) are admins: they see and manage every worker, cancel any job and
+pin releases. `./teardown.sh` deletes the box and its settings; the R2 bucket
 stays.
 
-Pinning releases, as an admin, signed in:
-`POST /api/pins {"parser": "v0.5.0", "worker": "v0.1.0", "curves_version": "11"}`. Workers on another
-parser get no jobs until they've updated.
+Admins pin the parser and worker releases, and the `.curves` version, on the Workers page. Workers move
+to the pins at their next heartbeat, and one on another parser gets no jobs until it has.
 
 ## Running it yourself
 
@@ -66,6 +69,7 @@ python -m unittest discover -s tests -t .
 ```
 
 Settings are `BAR_REWIND_*` environment variables (`BAR_REWIND_SITE_URL` is `site-url`) instead of SSM.
+`BAR_REWIND_DEV_STORE=<folder>` keeps files in that folder instead of R2, so the R2 settings aren't needed.
 The server needs Python 3 and boto3; the tests need only Python.
 
 ## What it costs
