@@ -122,9 +122,9 @@ def pins():
 def releases():
     pinned = pins()
     out = {}
-    for kind, base in (("parser", PARSER_RELEASES), ("worker", WORKER_RELEASES)):
+    for kind, base in (("parser", settings.get("parser-releases", PARSER_RELEASES)), ("worker", settings.get("worker-releases", WORKER_RELEASES))):
         if pinned.get(kind):
-            out[kind] = {"version": pinned[kind], "manifest": base + urllib.parse.quote(pinned[kind]) + "/manifest.json"}
+            out[kind] = {"version": pinned[kind], "manifest": base.rstrip("/") + "/" + urllib.parse.quote(pinned[kind]) + "/manifest.json"}
 
     return out
 
