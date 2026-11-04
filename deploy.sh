@@ -12,6 +12,8 @@ cd "$(dirname "$0")"
 export AWS_PROFILE=${DEPLOY_PROFILE:-personal} AWS_REGION=${AWS_REGION:-us-east-1}
 # Git Bash would rewrite /bar-rewind-server/... arguments into Windows paths
 export MSYS_NO_PATHCONV=1
+# the AWS CLI on Windows can't print systemctl's status dots in the console's code page
+export PYTHONUTF8=1
 STACK=${STACK:-bar-rewind-server}
 DOMAIN=${DOMAIN:-bar-rewind.robotofham.com}
 DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID:-1562509970933555241}
