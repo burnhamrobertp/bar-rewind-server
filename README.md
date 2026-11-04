@@ -1,77 +1,76 @@
 # bar-rewind-server
 
-A small AWS service that parses [Beyond All Reason](https://www.beyondallreason.info/) replays with
-[BAR-Rewind](https://github.com/burnhamrobertp/BAR-Rewind) on demand, so moderators can rewind and scrub a
-match without parsing it themselves. Paste a bar-rts.com replay link, wait a few minutes, click Watch.
+The server behind BAR Rewind's Watch links: moderators paste a bar-rts.com replay link, a worker parses it
+with [BAR-Rewind](https://github.com/burnhamrobertp/BAR-Rewind), and they click Watch to rewind and scrub
+the match in their own BAR. Workers are machines moderators run themselves,
+[bar-rewind-worker](https://github.com/burnhamrobertp/bar-rewind-worker).
 
 Sign-in is Discord, and only members of the BAR Discord holding an allowed role get in.
 
 ## How it works
 
 ```
-browser --CloudFront--> /          site/index.html (S3)
-                        /api/*     api/app.py (Lambda): Discord sign-in, jobs, signed download links
-                        /curves/*  parsed replays (S3, signed URLs only)
-
-POST /api/jobs --> DynamoDB jobs table --> Fargate Spot task (worker/), started when jobs wait
-                                           fetches the demo, engine, game and map, runs BAR-Rewind's
-                                           parse, gzips the .curves into S3 and reports progress
+browser --Cloudflare--> tunnel --> python -m server (one EC2 box, no open ports)
+                                     the site, the API, the worker API; state in SQLite
+worker  --Cloudflare--> tunnel -->   enroll, heartbeat, claim, report
+worker, player --> R2               presigned uploads and downloads only: nobody but the server holds a key
+SQLite --Litestream--> R2           continuous backup, restored on a fresh box
 ```
 
-- One worker at a time drains the queue and exits after 2 idle minutes. Nothing runs while nothing is queued.
-- Jobs report a stage, a percentage and a heartbeat; the page flags a job that stops moving. A job whose
-  worker disappears (a Spot reclaim, a crash) goes back in the queue, up to 3 tries.
-- Parsed replays, their logs and their jobs expire after 60 days (S3 lifecycle, DynamoDB TTL).
-- Queueing a replay that is already parsed returns it as is, unless it failed, its file has expired, or
-  it was parsed in an older .curves format than the deployed worker writes; those are parsed again.
-- `.curves` are stored gzipped and served with `Content-Encoding: gzip`: about 40% of the size crosses the wire.
-- Watch hands BAR-Rewind's player (Windows and Linux builds, served by the site) a one-hour signed link. The
-  first link from this site asks the moderator whether to trust it; the player downloads from trusted hosts only.
-
-## What it costs
-
-Rough us-east-1 prices, idle and per use:
-
-| | |
-|---|---|
-| Idle | under $1/month: S3 storage, the worker image in ECR |
-| A parse | Fargate Spot, 2 vCPU / 16 GB, a few cents an hour of parsing |
-| Downloads | CloudFront's free tier covers 1 TB/month |
-| Lambda, DynamoDB, SSM | inside their free tiers at this scale |
-
-There is no NAT gateway and no always-on instance. A monthly AWS Budgets alarm (default $10) emails you.
+- A worker enrolls once: it shows a code and opens the site, where its owner approves it. After that it
+  needs no settings of its own: the server tells it what to run (the pinned parser and worker releases),
+  whether it's paused and the longest replay it takes.
+- A worker gets the oldest queued job that fits it: not longer than its limit, and, once five parses have
+  reported their peak memory, not bigger than its memory. A job whose worker went quiet goes back in the
+  queue, preferring a machine with more memory, up to 3 tries.
+- A worker that fails 5 parses in a row pauses. One whose owner loses their Discord role pauses at the next
+  check, every 6 hours.
+- Queueing a replay that is already parsed returns it as is, unless it failed, its file has expired, or it
+  was parsed in an older .curves format than the pinned parser writes.
+- Parsed replays are stored gzipped and served with `Content-Encoding: gzip`, which the player unpacks.
 
 ## Deploy
 
-The site is served at `https://$DOMAIN/` (default bar-rewind.robotofham.com), a host of its own.
+Once:
 
-1. Make a Discord application at https://discord.com/developers/applications. Its client id is the
-   template's `DiscordClientId`; put its secret in SSM:
-   ```sh
-   aws ssm put-parameter --name /bar-rewind/discord-client-secret --type SecureString --value <secret>
-   ```
-2. With the AWS CLI signed in, Docker running, Zig 0.17 and Python 3 on PATH, and BAR-Rewind checked out
-   next to this repo, run `./deploy.sh you@example.com`. On the first run it asks for a DNS record that
-   proves the domain to AWS's certificate service, and waits until it is in place.
-3. Point the host at the CloudFront host it prints (a CNAME, DNS only if Cloudflare manages the domain),
-   and add the redirect URL it prints to the Discord application's OAuth2 redirects.
+1. A Discord application at https://discord.com/developers/applications, with
+   `https://$DOMAIN/api/callback` (default bar-rewind.robotofham.com) as an OAuth2 redirect.
+2. An R2 bucket, an Object Read & Write API token for it, and a lifecycle rule deleting `curves/` and
+   `logs/` after 60 days (leave `db/` alone: it's the database backup).
+3. A Cloudflare Tunnel (Zero Trust > Networks > Tunnels) whose public hostname is `$DOMAIN`, pointing at
+   `http://localhost:8080`.
 
-Run `./deploy.sh you@example.com` again after any change. Who may sign in is `ROLE_IDS` (Discord roles) and
-`USER_IDS` (Discord users, whatever their roles), comma-separated, set at the top of `deploy.sh` or in the
-environment. Each request checks with Discord again at most every 5 minutes, so losing the role ends access
-within that time. `./teardown.sh` deletes everything, parsed replays included.
+Then, with the AWS CLI signed in:
 
-## A worker on your own machine
+```sh
+DISCORD_CLIENT_SECRET=... CLOUDFLARED_TOKEN=... R2_ENDPOINT=https://<account>.eu.r2.cloudflarestorage.com \
+R2_BUCKET=... R2_ACCESS_KEY_ID=... R2_SECRET_ACCESS_KEY=... ./deploy.sh you@example.com
+```
 
-A desktop CPU parses several times faster than Fargate (Esker Creek, a 39-minute team game: about 9
-minutes on a Ryzen 7 5800X against 32 on Fargate). `./local-worker.sh` runs the same worker image under
-Docker on this machine; while it runs, the API leaves Fargate alone, and it takes the queue back about two
-minutes after the local worker stops. The container sees only its own access key (`~/.aws/bar-rewind-worker`,
-limited to the jobs table and the bucket's curves and logs) and keeps engines, games and maps in the Docker
-volume `bar-rewind-bar`. `./local-worker.sh stop` stops it; `./local-worker.sh key` replaces its access key.
+The secrets go into SSM, so later runs need only `./deploy.sh you@example.com`. A deploy ships the
+commit checked out here, pushed first: the box fetches it from GitHub. Who may sign in is `ROLE_IDS`
+(Discord roles) and `USER_IDS` (Discord users), comma-separated, set at the top of `deploy.sh` or in the
+environment; `ADMIN_IDS` may pin releases. `./teardown.sh` deletes the box and its settings; the R2 bucket
+stays.
 
-`./local-worker.sh widgets <folder>` runs the `.lua` widgets in that folder in every parse (remembered across
-restarts; `widgets none` forgets it). Deploying with `CLOUD_WORKER=off` stops Fargate parsing altogether:
-queued jobs then wait for a local worker (`CLOUD_WORKER=on` turns it back on).
+Pinning releases, as an admin, signed in:
+`POST /api/pins {"parser": "v0.5.0", "worker": "v0.1.0", "curves_version": "11"}`. Workers on another
+parser get no jobs until they've updated.
+
+## Running it yourself
+
+```sh
+BAR_REWIND_SESSION_KEY=... BAR_REWIND_SITE_URL=http://localhost:8080 BAR_REWIND_R2_ENDPOINT=... \
+BAR_REWIND_R2_BUCKET=... BAR_REWIND_R2_ACCESS_KEY_ID=... BAR_REWIND_R2_SECRET_ACCESS_KEY=... python -m server
+python -m unittest discover -s tests -t .
+```
+
+Settings are `BAR_REWIND_*` environment variables (`BAR_REWIND_SITE_URL` is `site-url`) instead of SSM.
+The server needs Python 3 and boto3; the tests need only Python.
+
+## What it costs
+
+A t4g.small (about $12/month) and its 20 GB disk (about $2). R2 storage is about $0.015/GB-month and
+downloads are free. A monthly AWS Budgets alarm (default $25) emails you.
 
 AI disclosure: written with assistance from Claude Code.

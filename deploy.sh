@@ -1,33 +1,32 @@
 #!/usr/bin/env bash
-# Deploys or updates the BAR Rewind server at https://$DOMAIN: ./deploy.sh <email for cost alerts>
-# Needs the AWS CLI, Docker, OpenSSL, Python 3, Zig 0.17 on PATH and a BAR-Rewind checkout at $BAR_REWIND
-# (default ../BAR-Rewind). The Discord client secret goes in SSM as /$STACK/discord-client-secret
-# (SecureString) before the first sign-in; DISCORD_CLIENT_SECRET sets it here instead. DEPLOY_PROFILE picks
-# the AWS profile (default "personal"; a shell's own AWS_PROFILE is ignored), AWS_REGION defaults to us-east-1
-# (CloudFront certificates must be there). CLOUD_WORKER=off stops Fargate parsing (only a local worker
-# parses), =on starts it again; left unset, the stack keeps what it had.
+# Deploys or updates the BAR Rewind server: ./deploy.sh <email for cost alerts>
+# Ships the commit checked out here, which must be pushed: the server fetches it from GitHub.
+# Needs the AWS CLI and OpenSSL. The first run also needs, in the environment (each is kept in SSM after):
+#   DISCORD_CLIENT_SECRET   the Discord application's secret
+#   CLOUDFLARED_TOKEN       the token of a Cloudflare Tunnel whose public hostname is $DOMAIN -> http://localhost:8080
+#   R2_ENDPOINT             https://<account>.eu.r2.cloudflarestorage.com (no .eu for a bucket outside the EU jurisdiction)
+#   R2_BUCKET, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY   an R2 bucket and an Object Read & Write token for it
+# DEPLOY_PROFILE picks the AWS profile (default "personal"), AWS_REGION defaults to us-east-1.
 set -euo pipefail
 cd "$(dirname "$0")"
 export AWS_PROFILE=${DEPLOY_PROFILE:-personal} AWS_REGION=${AWS_REGION:-us-east-1}
-# Git Bash would rewrite /bar-rewind/... arguments into Windows paths
+# Git Bash would rewrite /bar-rewind-server/... arguments into Windows paths
 export MSYS_NO_PATHCONV=1
-STACK=${STACK:-bar-rewind}
+STACK=${STACK:-bar-rewind-server}
 DOMAIN=${DOMAIN:-bar-rewind.robotofham.com}
-# who may sign in: members of the BAR Discord with one of these roles, or these users. Passed every time,
-# since CloudFormation would otherwise keep the stack's earlier values over the template's defaults.
+DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID:-1562509970933555241}
+GUILD_ID=${GUILD_ID:-549281623154229250}
+# who may sign in: members of the guild with one of these roles, or these users; admins pin releases
 ROLE_IDS=${ROLE_IDS:-549291872192036874}
 USER_IDS=${USER_IDS:-183418851067822085}
-BAR_REWIND=${BAR_REWIND:-../BAR-Rewind}
-# the first that runs: on Windows python3 can be the Microsoft Store's placeholder
-for candidate in ${PYTHON:-} python3 python; do
-  "$candidate" -c "" 2>/dev/null && PYTHON=$candidate && break
-done
+ADMIN_IDS=${ADMIN_IDS:-183418851067822085}
 EMAIL=${1:?usage: deploy.sh <email for cost alerts>}
-mkdir -p .deploy
 
-param() { aws ssm get-parameter --name "/$STACK/$1" --with-decryption --query Parameter.Value --output text; }
-# false only when the parameter does not exist; any other failure (an expired sign-in) stops the
-# script rather than passing for a missing secret that then gets regenerated
+COMMIT=$(git rev-parse HEAD)
+[ -z "$(git status --porcelain --untracked-files=no)" ] || { echo "commit or stash your changes first: the server runs $COMMIT" >&2; exit 1; }
+git fetch -q origin
+git branch -r --contains "$COMMIT" | grep -q . || { echo "push $COMMIT first: the server fetches it from GitHub" >&2; exit 1; }
+
 has() {
   local out
   out=$(aws ssm get-parameter --name "/$STACK/$1" --query Parameter.Name --output text 2>&1) && return 0
@@ -35,87 +34,66 @@ has() {
   echo "$out" >&2
   exit 1
 }
-secret() { aws ssm put-parameter --name "/$STACK/$1" --type SecureString --overwrite --value "$2" >/dev/null; }
-output() { aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text; }
+put() { aws ssm put-parameter --name "/$STACK/$1" --type "$2" --overwrite --value "$3" >/dev/null; }
+secret() {
+  if [ -n "${2:-}" ]; then put "$1" SecureString "$2"
+  elif ! has "$1"; then echo "set $3 for the first deploy" >&2; exit 1; fi
+}
 
 echo "== AWS account $(aws sts get-caller-identity --query Account --output text) (profile $AWS_PROFILE)"
-echo "== secrets"
-has session-key || secret session-key "$(openssl rand -hex 32)"
-has origin-secret || secret origin-secret "$(openssl rand -hex 24)"
-has cloudfront-private-key || secret cloudfront-private-key "$(openssl genrsa 2048 2>/dev/null)"
-if [ -n "${DISCORD_CLIENT_SECRET:-}" ]; then secret discord-client-secret "$DISCORD_CLIENT_SECRET"
-elif ! has discord-client-secret; then secret discord-client-secret unset; fi
-ORIGIN_SECRET=$(param origin-secret)
-PRIVATE_KEY=$(param cloudfront-private-key)
-PUBLIC_KEY=$(openssl rsa -pubout 2>/dev/null <<<"$PRIVATE_KEY")
-
-echo "== certificate for $DOMAIN"
-CERT=$(aws acm list-certificates --certificate-statuses ISSUED PENDING_VALIDATION \
-  --query "CertificateSummaryList[?DomainName=='$DOMAIN'].CertificateArn | [0]" --output text)
-if [ "$CERT" = "None" ]; then
-  CERT=$(aws acm request-certificate --domain-name "$DOMAIN" --validation-method DNS --tags "Key=project,Value=$STACK" \
-    --query CertificateArn --output text)
-  sleep 10
-fi
-if [ "$(aws acm describe-certificate --certificate-arn "$CERT" --query Certificate.Status --output text)" != "ISSUED" ]; then
-  echo "Add this DNS record in Cloudflare (DNS only), then wait here:"
-  aws acm describe-certificate --certificate-arn "$CERT" \
-    --query 'Certificate.DomainValidationOptions[0].ResourceRecord.[Type,Name,Value]' --output text
-  # ACM can take half an hour to look; the CLI's own waiter gives up sooner
-  for _ in $(seq 180); do
-    STATUS=$(aws acm describe-certificate --certificate-arn "$CERT" --query Certificate.Status --output text)
-    [ "$STATUS" = "PENDING_VALIDATION" ] || break
-    sleep 20
-  done
-  [ "$STATUS" = "ISSUED" ] || { echo "certificate is $STATUS" >&2; exit 1; }
-fi
+echo "== settings"
+has session-key || put session-key SecureString "$(openssl rand -hex 32)"
+secret discord-client-secret "${DISCORD_CLIENT_SECRET:-}" DISCORD_CLIENT_SECRET
+secret cloudflared-token "${CLOUDFLARED_TOKEN:-}" CLOUDFLARED_TOKEN
+secret r2-access-key-id "${R2_ACCESS_KEY_ID:-}" R2_ACCESS_KEY_ID
+secret r2-secret-access-key "${R2_SECRET_ACCESS_KEY:-}" R2_SECRET_ACCESS_KEY
+[ -n "${R2_ENDPOINT:-}" ] && put r2-endpoint String "$R2_ENDPOINT"
+[ -n "${R2_BUCKET:-}" ] && put r2-bucket String "$R2_BUCKET"
+{ has r2-endpoint && has r2-bucket; } || { echo "set R2_ENDPOINT and R2_BUCKET for the first deploy" >&2; exit 1; }
+put site-url String "https://$DOMAIN"
+put discord-client-id String "$DISCORD_CLIENT_ID"
+put guild-id String "$GUILD_ID"
+put role-ids String "$ROLE_IDS"
+put user-ids String "$USER_IDS"
+put admin-ids String "$ADMIN_IDS"
 
 echo "== stack"
-# ECS needs its service-linked role once per account before the first cluster
-aws iam get-role --role-name AWSServiceRoleForECS >/dev/null 2>&1 ||
-  aws iam create-service-linked-role --aws-service-name ecs.amazonaws.com >/dev/null
-# a first create that failed leaves a stack that can only be deleted
 if [ "$(aws cloudformation describe-stacks --stack-name "$STACK" --query 'Stacks[0].StackStatus' --output text 2>/dev/null)" = "ROLLBACK_COMPLETE" ]; then
   aws cloudformation delete-stack --stack-name "$STACK"
   aws cloudformation wait stack-delete-complete --stack-name "$STACK"
 fi
-VPC=$(aws ec2 describe-vpcs --filters Name=is-default,Values=true --query 'Vpcs[0].VpcId' --output text)
-SUBNETS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC" Name=default-for-az,Values=true --query 'Subnets[].SubnetId' --output text | tr '\t' ',')
-TAG=$(date -u +%Y%m%d%H%M%S)
-CURVES_VERSION=$(sed -n 's/^pub const version = \([0-9]*\);.*/\1/p' "$BAR_REWIND/src/curves.zig")
-[ -n "$CURVES_VERSION" ] || { echo "no curves version in $BAR_REWIND/src/curves.zig" >&2; exit 1; }
-aws cloudformation deploy --stack-name "$STACK" --template-file template.yaml --capabilities CAPABILITY_IAM \
-  --no-fail-on-empty-changeset --tags "project=$STACK" --parameter-overrides \
-  "SiteDomain=$DOMAIN" "CertificateArn=$CERT" "VpcId=$VPC" "SubnetIds=$SUBNETS" \
-  "CloudFrontPublicKey=$PUBLIC_KEY" "OriginSecret=$ORIGIN_SECRET" "AlertEmail=$EMAIL" "ImageTag=$TAG" "CurvesVersion=$CURVES_VERSION" \
-  "RoleIds=$ROLE_IDS" "UserIds=$USER_IDS" ${CLOUD_WORKER:+"CloudWorker=$CLOUD_WORKER"}
-BUCKET=$(output BucketName)
-REPO=$(output RepositoryUri)
-aws ssm put-parameter --name "/$STACK/site-url" --type String --overwrite --value "https://$DOMAIN" >/dev/null
+# a new Commit or ImageId changes the box itself, which replaces it: both keep their first values
+previous() {
+  aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Parameters[?ParameterKey=='$1'].ParameterValue" \
+    --output text 2>/dev/null || true
+}
+FIRST_COMMIT=$(previous Commit)
+IMAGE=$(previous ImageId)
+[ -n "$IMAGE" ] || IMAGE=$(aws ssm get-parameter --name /aws/service/canonical/ubuntu/server/24.04/stable/current/arm64/hvm/ebs-gp3/ami-id \
+  --query Parameter.Value --output text)
+aws cloudformation deploy --stack-name "$STACK" --template-file deploy/template.yaml --capabilities CAPABILITY_IAM \
+  --no-fail-on-empty-changeset --tags "project=$STACK" --parameter-overrides "AlertEmail=$EMAIL" \
+  "Commit=${FIRST_COMMIT:-$COMMIT}" "ImageId=$IMAGE"
+INSTANCE=$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='InstanceId'].OutputValue" --output text)
 
-echo "== BAR-Rewind (the players, the Linux package for the worker)"
-(cd "$BAR_REWIND" && "$PYTHON" tools/dist.py)
-cp "$BAR_REWIND/dist/bar-rewind-linux.tar.gz" worker/
-cp "$BAR_REWIND/dist/bar-rewind.exe" site/
-cp "$BAR_REWIND/dist/bar-rewind-player-linux" site/bar-rewind-linux
-
-echo "== worker image $TAG"
-aws ecr get-login-password | docker login --username AWS --password-stdin "${REPO%%/*}" >/dev/null
-docker build -q --platform linux/amd64 -t "$REPO:$TAG" worker >/dev/null
-docker push -q "$REPO:$TAG" >/dev/null
-# the same image for local-worker.sh, which a running local worker restarts on
-docker tag "$REPO:$TAG" bar-rewind-worker:latest
-if [ -n "$(docker ps -q -f name='^bar-rewind-worker$')" ]; then ./local-worker.sh; fi
-
-echo "== API"
-"$PYTHON" -c "import zipfile; zipfile.ZipFile('.deploy/api.zip', 'w', zipfile.ZIP_DEFLATED).write('api/app.py', 'app.py')"
-aws lambda update-function-code --function-name "$(output ApiFunction)" --zip-file fileb://.deploy/api.zip >/dev/null
-aws lambda wait function-updated --function-name "$(output ApiFunction)"
-
-echo "== site"
-aws s3 sync site/ "s3://$BUCKET/site/" --delete >/dev/null
+echo "== $COMMIT onto $INSTANCE"
+for _ in $(seq 60); do
+  [ "$(aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$INSTANCE" --query 'InstanceInformationList[0].PingStatus' --output text)" = "Online" ] && break
+  sleep 10
+done
+# a fresh box's first boot may still be cloning and installing
+COMMAND=$(aws ssm send-command --instance-ids "$INSTANCE" --document-name AWS-RunShellScript --comment "deploy $COMMIT" --timeout-seconds 900 \
+  --parameters "commands=[\"cloud-init status --wait >/dev/null || true\",\"set -e\",\"cd /opt/bar-rewind-server\",\"git fetch -q origin\",\"git checkout -q --detach $COMMIT\",\"PARAMS=/$STACK AWS_DEFAULT_REGION=$AWS_REGION deploy/install.sh\"]" \
+  --query Command.CommandId --output text)
+STATUS=InProgress
+for _ in $(seq 90); do
+  STATUS=$(aws ssm get-command-invocation --command-id "$COMMAND" --instance-id "$INSTANCE" --query Status --output text 2>/dev/null || echo Pending)
+  case $STATUS in Pending|InProgress|Delayed) sleep 10 ;; *) break ;; esac
+done
+aws ssm get-command-invocation --command-id "$COMMAND" --instance-id "$INSTANCE" --query '[StandardOutputContent, StandardErrorContent]' --output text | tail -40
+[ "$STATUS" = Success ] || { echo "the deploy on $INSTANCE ended $STATUS" >&2; exit 1; }
 
 echo
 echo "https://$DOMAIN/"
-echo "Cloudflare: $DOMAIN CNAME $(output CloudFrontHost), DNS only"
 echo "Discord OAuth2 redirect: https://$DOMAIN/api/callback"
+echo "R2: a lifecycle rule deleting curves/ and logs/ after 60 days (the dashboard; the deploy's token can't set one)"

@@ -1,0 +1,20 @@
+[Unit]
+Description=BAR Rewind server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=bar-rewind
+WorkingDirectory=@CHECKOUT@
+Environment=PARAMS=@PARAMS@ AWS_DEFAULT_REGION=@REGION@ DB=/var/lib/bar-rewind/bar-rewind.db PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 -m server
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/bar-rewind
+
+[Install]
+WantedBy=multi-user.target
