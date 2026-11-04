@@ -11,6 +11,7 @@
   <h1>BAR Rewind</h1>
   <span class="grow"></span>
   <a class="button" href="player.html">Get the player</a>
+  <a class="button" href="workers.html">Workers</a>
   <span id="who"></span>
 </header>
 <main>
@@ -95,6 +96,8 @@ function statusCell(job) {
   if (job.status === "running" || job.status === "queued") {
     if (job.status === "running") cell.append(el("div", { class: "bar" }, el("div", { style: `width:${job.pct || 0}%` })));
     cell.append(el("div", { class: "stage" }, job.stage || ""));
+    if (job.worker) cell.append(el("div", { class: "stage", title: job.worker }, `on ${job.worker_owner || "?"}'s worker ${job.worker.slice(0, 8)}`));
+    if (job.needs_mb) cell.append(el("div", { class: "stage" }, `needs about ${Math.ceil(job.needs_mb / 1024)} GB of memory`));
   } else if (job.status === "failed") {
     cell.append(el("div", { class: "stage", title: job.error || "" }, (job.error || "").split("\n")[0].slice(0, 160)));
   } else if (job.outdated) {
@@ -142,12 +145,25 @@ function row(job) {
     r.onclick = () => queue(job.id);
     actions.append(r);
   }
+  if (job.cancellable) {
+    const c = el("button", { title: "Take it out of the queue; a worker parsing it stops" }, "Cancel");
+    c.onclick = () => cancel(job);
+    actions.append(c);
+  }
   if (job.has_log && job.status !== "queued" && job.status !== "running") {
     actions.append(" ", el("a", { class: "button", href: `api/jobs/${job.id}/log`, target: "_blank", rel: "noopener",
       title: "What the worker, the engine and bake reported, for the latest try" }, "Log"));
   }
   return el("tr", {}, el("td", {}, title, players), el("td", { class: "hide-narrow" }, job.user || "", el("div", { class: "stage" }, ago(job.created))),
     statusCell(job), actions);
+}
+
+async function cancel(job) {
+  if (!confirm(`Cancel ${job.map || job.id}?`)) return;
+  try {
+    await api(`api/jobs/${job.id}/cancel`, { method: "POST" });
+  } catch (e) { $("submit-error").textContent = e.message; }
+  refresh();
 }
 
 async function refresh() {
@@ -180,6 +196,12 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden && !$
 (async () => {
   try {
     const me = await api("api/me");
+    const linking = sessionStorage.getItem("link-code");
+    if (linking) {
+      sessionStorage.removeItem("link-code");
+      location.href = "link.html?code=" + encodeURIComponent(linking);
+      return;
+    }
     $("who").replaceChildren(me.name + " · ", el("a", { href: "api/logout" }, "sign out"));
     $("signin").hidden = true;
     $("app").hidden = false;

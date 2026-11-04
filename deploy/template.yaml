@@ -1,0 +1,97 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: BAR Rewind server - one small EC2 box reached only through a Cloudflare Tunnel
+
+Parameters:
+  InstanceType:
+    Type: String
+    Default: t4g.small
+  ImageId:
+    Type: AWS::EC2::Image::Id
+  Repository:
+    Type: String
+    Default: https://github.com/burnhamrobertp/bar-rewind-server.git
+  Commit:
+    Type: String
+  AlertEmail:
+    Type: String
+  MonthlyBudget:
+    Type: Number
+    Default: 25
+
+Resources:
+  # no ingress at all: cloudflared dials out to Cloudflare, and deploys arrive through SSM
+  ServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "${AWS::StackName}: outbound only"
+
+  ServerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - { Effect: Allow, Principal: { Service: ec2.amazonaws.com }, Action: sts:AssumeRole }
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: settings
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [ssm:GetParametersByPath, ssm:GetParameters, ssm:GetParameter]
+                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${AWS::StackName}*"
+              - Effect: Allow
+                Action: kms:Decrypt
+                Resource: "*"
+                Condition:
+                  StringEquals: { "kms:ViaService": !Sub "ssm.${AWS::Region}.amazonaws.com" }
+
+  ServerProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [!Ref ServerRole]
+
+  Server:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref ImageId
+      IamInstanceProfile: !Ref ServerProfile
+      SecurityGroupIds: [!GetAtt ServerSecurityGroup.GroupId]
+      MetadataOptions: { HttpTokens: required }
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs: { VolumeSize: 20, VolumeType: gp3, Encrypted: true }
+      Tags:
+        - { Key: Name, Value: !Ref AWS::StackName }
+        - { Key: project, Value: !Ref AWS::StackName }
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -euo pipefail
+          apt-get update -q
+          apt-get install -y -q git
+          git clone ${Repository} /opt/bar-rewind-server
+          cd /opt/bar-rewind-server
+          git checkout --detach ${Commit}
+          PARAMS=/${AWS::StackName} AWS_DEFAULT_REGION=${AWS::Region} deploy/install.sh
+
+  Budget:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: !Ref AWS::StackName
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit: { Amount: !Ref MonthlyBudget, Unit: USD }
+      NotificationsWithSubscribers:
+        - Notification: { NotificationType: ACTUAL, ComparisonOperator: GREATER_THAN, Threshold: 80 }
+          Subscribers: [{ SubscriptionType: EMAIL, Address: !Ref AlertEmail }]
+        - Notification: { NotificationType: FORECASTED, ComparisonOperator: GREATER_THAN, Threshold: 100 }
+          Subscribers: [{ SubscriptionType: EMAIL, Address: !Ref AlertEmail }]
+
+Outputs:
+  InstanceId:
+    Value: !Ref Server
