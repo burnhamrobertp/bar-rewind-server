@@ -59,7 +59,7 @@ class Enrollment(WorkerTest):
     def test_only_so_many_wait_at_once(self):
         for _ in range(workers.PENDING_ENROLLMENTS):
             self.call("POST", "/api/worker/enroll", {"id": str(uuid.uuid4())})
-        self.assertEqual(429, self.call("POST", "/api/worker/enroll", {}).status)
+        self.assertEqual(429, self.call("POST", "/api/worker/enroll", {"id": str(uuid.uuid4())}).status)
 
     def test_an_unknown_token_is_refused(self):
         self.assertEqual(401, self.worker_call({"authorization": "Bearer nope"}, "/api/worker/heartbeat").status)

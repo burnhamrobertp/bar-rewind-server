@@ -115,7 +115,7 @@ $("pins").onsubmit = async e => {
   const changed = {};
   for (const [key, id] of Object.entries(pinFields)) {
     const value = $(id).value.trim();
-    if (value !== (pinsShown[key] || "")) changed[key] = value;
+    if (value !== (pinsShown?.[key] || "")) changed[key] = value;
   }
   try {
     await api("api/pins", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(changed) });
