@@ -70,16 +70,16 @@ class Heartbeat(WorkerTest):
     def test_it_records_the_machine_and_hands_back_settings_and_pinned_releases(self):
         auth, worker_id, cookie = self.enroll()
         settings._cache["admin-ids"] = "1"
-        self.call("POST", "/api/pins", {"parser": "v0.5.0", "worker": "v0.1.0", "curves_version": "12"}, cookie)
-        r = self.worker_call(auth, "/api/worker/heartbeat", {"mem_mb": 65536, "disk_free_mb": 9000, "version": "v0.1.0", "mem_free_mb": "lots"}).json()
-        self.assertEqual("https://github.com/burnhamrobertp/BAR-Rewind/releases/download/v0.5.0/manifest.json", r["releases"]["parser"]["manifest"])
-        self.assertEqual("v0.1.0", r["releases"]["worker"]["version"])
+        self.call("POST", "/api/pins", {"parser": "0.5.0", "worker": "0.1.0", "curves_version": "12"}, cookie)
+        r = self.worker_call(auth, "/api/worker/heartbeat", {"mem_mb": 65536, "disk_free_mb": 9000, "version": "0.1.0", "mem_free_mb": "lots"}).json()
+        self.assertEqual("https://github.com/burnhamrobertp/BAR-Rewind/releases/download/0.5.0/manifest.json", r["releases"]["parser"]["manifest"])
+        self.assertEqual("0.1.0", r["releases"]["worker"]["version"])
         worker = db.one("SELECT * FROM workers")
         self.assertEqual((65536, 9000, None), (worker["mem_mb"], worker["disk_free_mb"], worker["mem_free_mb"]))
 
     def test_only_admins_pin_releases_and_a_curves_version_is_a_number(self):
         _, _, cookie = self.enroll()
-        self.assertEqual(403, self.call("POST", "/api/pins", {"parser": "v9"}, cookie).status)
+        self.assertEqual(403, self.call("POST", "/api/pins", {"parser": "9.0.0"}, cookie).status)
         settings._cache["admin-ids"] = "1"
         self.assertEqual(400, self.call("POST", "/api/pins", {"curves_version": "v12"}, cookie).status)
         self.assertEqual(200, self.call("POST", "/api/pins", {"curves_version": "12"}, cookie).status)
@@ -150,10 +150,10 @@ class Claim(WorkerTest):
         self.assertEqual(200, self.worker_call(auth, "/api/worker/claim").status)
         self.assertEqual(204, self.worker_call(auth, "/api/worker/claim").status)
         settings._cache["admin-ids"] = "1"
-        self.call("POST", "/api/pins", {"parser": "v0.5.0"}, cookie)
+        self.call("POST", "/api/pins", {"parser": "0.5.0"}, cookie)
         other, _, _ = self.enroll(owner="2")
         self.assertEqual(204, self.worker_call(other, "/api/worker/claim").status)
-        self.worker_call(other, "/api/worker/heartbeat", {"parser_version": "v0.5.0"})
+        self.worker_call(other, "/api/worker/heartbeat", {"parser_version": "0.5.0"})
         self.assertEqual(200, self.worker_call(other, "/api/worker/claim").status)
 
 
