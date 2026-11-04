@@ -20,7 +20,7 @@ class Handler(BaseHTTPRequestHandler):
 
             return self.send(respond(411, {"error": "send a Content-Length, not a chunked body"}))
         length = self.headers.get("content-length") or "0"
-        if not length.isdigit() or (int(length) > MAX_BODY and not url.path.startswith("/api/dev-store/")):
+        if not length.isdigit() or (int(length) > MAX_BODY and not (url.path.startswith("/api/dev-store/") and isinstance(storage.store, storage.Folder))):
             self.close_connection = True
 
             return self.send(respond(413, {"error": "too large"}))
