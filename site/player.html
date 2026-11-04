@@ -20,7 +20,7 @@
 
   <div class="panel" id="windows">
     <h2>Windows <a class="other-os" href="#linux" data-show="linux">On Linux?</a></h2>
-    <p><a class="button primary" href="bar-rewind.exe" download>Download bar-rewind.exe</a></p>
+    <p><a class="button primary" href="https://github.com/burnhamrobertp/BAR-Rewind/releases/latest/download/bar-rewind.exe">Download bar-rewind.exe</a></p>
     <ol class="steps">
       <li>Keep it somewhere it can stay. If the browser holds the download back, choose <b>Keep</b>.</li>
       <li>Run it once. If Windows warns that it protected your PC: <b>More info</b> &gt; <b>Run anyway</b>.</li>
@@ -32,18 +32,13 @@
 
   <div class="panel" id="linux">
     <h2>Linux <a class="other-os" href="#windows" data-show="windows">On Windows?</a></h2>
-    <p><a class="button primary" href="bar-rewind-linux" download="bar-rewind">Download bar-rewind</a></p>
+    <p><a class="button primary" href="https://github.com/burnhamrobertp/BAR-Rewind/releases/latest/download/bar-rewind-player-linux">Download bar-rewind</a></p>
     <ol class="steps">
       <li>Install and register it (needs <code>xdg-utils</code>):
-        <code>mkdir -p ~/.local/bin &amp;&amp; mv ~/Downloads/bar-rewind ~/.local/bin/ &amp;&amp; chmod +x ~/.local/bin/bar-rewind &amp;&amp; ~/.local/bin/bar-rewind</code></li>
+        <code>mkdir -p ~/.local/bin &amp;&amp; mv ~/Downloads/bar-rewind-player-linux ~/.local/bin/bar-rewind &amp;&amp; chmod +x ~/.local/bin/bar-rewind &amp;&amp; ~/.local/bin/bar-rewind</code></li>
       <li>Click Watch on a replay, and type <code>y</code> when the player asks to trust this site.</li>
     </ol>
     <p class="note">To remove it: <code>~/.local/bin/bar-rewind --uninstall</code>, then delete the file.</p>
-  </div>
-
-  <div class="panel" id="widgets" hidden>
-    <h2>Widgets</h2>
-    <ul id="widget-list"></ul>
   </div>
 
   <div class="panel">
@@ -62,24 +57,6 @@ const platform = (navigator.userAgentData && navigator.userAgentData.platform) |
 show(location.hash === "#linux" || location.hash === "#windows" ? location.hash.slice(1)
   : /linux|x11/i.test(platform) && !/android/i.test(navigator.userAgent) ? "linux" : "windows");
 for (const a of document.querySelectorAll(".other-os")) a.onclick = e => { e.preventDefault(); show(a.dataset.show); history.replaceState(null, "", "#" + a.dataset.show); };
-
-// files for signed-in users: the panel stays hidden for everyone else
-(async () => {
-  const r = await fetch("api/downloads", { credentials: "same-origin" }).catch(() => null);
-  if (!r || !r.ok) return;
-  const { files } = await r.json();
-  if (!files.length) return;
-  const list = document.getElementById("widget-list");
-  for (const f of files) {
-    const item = document.createElement("li");
-    const link = document.createElement("a");
-    link.href = "api/downloads/" + encodeURIComponent(f.name);
-    link.textContent = f.name;
-    item.append(link, f.description ? " - " + f.description : "");
-    list.append(item);
-  }
-  document.getElementById("widgets").hidden = false;
-})();
 </script>
 </body>
 </html>
