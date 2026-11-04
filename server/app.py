@@ -10,7 +10,7 @@
 import mimetypes, re
 from pathlib import Path
 
-from . import auth, jobs, workers
+from . import auth, jobs, storage, workers
 from .web import Response, cookie, redirect, respond
 
 SITE = Path(__file__).resolve().parent.parent / "site"
@@ -27,6 +27,8 @@ def route(req):
         return redirect("/", [cookie("s", "", 0)])
     if req.path.startswith("/api/worker/"):
         return worker_route(req)
+    if req.path.startswith("/api/dev-store/") and isinstance(storage.store, storage.Folder):
+        return storage.store.serve(req)
 
     submitting = req.path == "/api/jobs" and req.method == "POST"
     user, extra = auth.signed_in(req, force_check=submitting)

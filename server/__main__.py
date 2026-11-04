@@ -3,7 +3,7 @@
 import os, sys, threading, time, traceback, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import app, db, storage, workers
+from . import app, db, settings, storage, workers
 from .web import Request, respond
 
 MAX_BODY = 1 << 20
@@ -20,7 +20,7 @@ class Handler(BaseHTTPRequestHandler):
 
             return self.send(respond(411, {"error": "send a Content-Length, not a chunked body"}))
         length = self.headers.get("content-length") or "0"
-        if not length.isdigit() or int(length) > MAX_BODY:
+        if not length.isdigit() or (int(length) > MAX_BODY and not url.path.startswith("/api/dev-store/")):
             self.close_connection = True
 
             return self.send(respond(413, {"error": "too large"}))
@@ -63,7 +63,7 @@ def tidy():
 
 def main():
     db.init(os.environ.get("DB", "bar-rewind.db"))
-    storage.store = storage.R2()
+    storage.store = storage.Folder(settings.get("dev-store")) if settings.get("dev-store") else storage.R2()
     threading.Thread(target=tidy, daemon=True).start()
     server = ThreadingHTTPServer((os.environ.get("HOST", "127.0.0.1"), int(os.environ.get("PORT", "8080"))), Handler)
     server.daemon_threads = True
