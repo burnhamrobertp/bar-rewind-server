@@ -94,7 +94,8 @@ function row(w) {
     el("td", { class: "actions" }, pause, " ", limit, " ", remove));
 }
 
-let pinsShown = false;
+let pinsShown = null;
+const pinFields = { parser: "pin-parser", worker: "pin-worker", curves_version: "pin-curves" };
 
 async function showOverview() {
   const o = await api("api/overview");
@@ -103,19 +104,22 @@ async function showOverview() {
     `Parser ${pins.parser || "not pinned"}, worker ${pins.worker || "not pinned"}, .curves ${pins.curves_version || "not pinned"}. ` +
     (o.mb_per_player_minute ? `Parses need about ${Math.round(o.mb_per_player_minute)} MB per player-minute.` : "No memory estimate yet: it needs five parses.");
   if (o.admin && !pinsShown) {
-    pinsShown = true;
+    pinsShown = pins;
     $("pins").hidden = $("pins-note").hidden = false;
-    $("pin-parser").value = pins.parser || "";
-    $("pin-worker").value = pins.worker || "";
-    $("pin-curves").value = pins.curves_version || "";
+    for (const [key, id] of Object.entries(pinFields)) $(id).value = pins[key] || "";
   }
 }
 
 $("pins").onsubmit = async e => {
   e.preventDefault();
+  const changed = {};
+  for (const [key, id] of Object.entries(pinFields)) {
+    const value = $(id).value.trim();
+    if (value !== (pinsShown[key] || "")) changed[key] = value;
+  }
   try {
-    await api("api/pins", { method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ parser: $("pin-parser").value.trim(), worker: $("pin-worker").value.trim(), curves_version: $("pin-curves").value.trim() }) });
+    await api("api/pins", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(changed) });
+    pinsShown = null;
   } catch (err) { $("error").textContent = err.message; }
   refresh();
 };
