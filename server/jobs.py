@@ -40,15 +40,15 @@ def list_jobs(req, user):
     from . import workers
     jobs = db.rows("SELECT * FROM jobs ORDER BY created DESC")
     version = curves_version()
-    names = {w["id"]: w["name"] for w in db.rows("SELECT id, name FROM workers")}
-    ratio = workers.memory_ratio()
     admin = auth.is_admin(user)
+    owners = {w["id"]: w["owner_name"] for w in db.rows("SELECT id, owner_name FROM workers")}
+    ratio = workers.memory_ratio() if any(j["status"] == "queued" for j in jobs) else None
     listed = []
     for j in jobs:
         shown = public(j, version)
         shown["cancellable"] = j["status"] in ("queued", "running") and (j["uid"] == user["uid"] or admin)
         if j["status"] == "running":
-            shown["worker"] = names.get(j["worker"])
+            shown.update(worker=j["worker"], worker_owner=owners.get(j["worker"]))
         if j["status"] == "queued":
             shown["needs_mb"] = workers.estimate_mb(j, ratio)
         listed.append(shown)

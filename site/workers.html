@@ -86,11 +86,11 @@ function row(w) {
   };
   const remove = el("button", {}, "Remove");
   remove.onclick = async () => {
-    if (!confirm(`Remove ${w.name}? It stops parsing and has to be enrolled again to come back.`)) return;
+    if (!confirm(`Remove worker ${w.id}? It stops parsing and has to be enrolled again to come back.`)) return;
     try { await api("api/workers/" + w.id, { method: "DELETE" }); } catch (e) { $("error").textContent = e.message; }
     refresh();
   };
-  return el("tr", {}, el("td", {}, w.name, el("div", { class: "stage" }, w.owner_name)), machine, status,
+  return el("tr", {}, el("td", { title: w.id }, w.id.slice(0, 8), el("div", { class: "stage" }, "registered by " + w.owner_name)), machine, status,
     el("td", { class: "actions" }, pause, " ", limit, " ", remove));
 }
 

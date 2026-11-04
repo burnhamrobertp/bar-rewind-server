@@ -63,7 +63,7 @@ def signed_in_route(req, user):
         return workers.approve(req, user)
     if req.path == "/api/workers" and req.method == "GET":
         return workers.listing(req, user)
-    m = re.fullmatch(r"/api/workers/([0-9a-f]{16})", req.path)
+    m = re.fullmatch(r"/api/workers/([0-9a-f-]{36})", req.path)
     if m and req.method == "POST":
         return workers.change(req, user, m.group(1))
     if m and req.method == "DELETE":

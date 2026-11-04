@@ -51,7 +51,7 @@ function row(label, value) {
 (async () => {
   try {
     const w = await api("api/link/" + encodeURIComponent(code));
-    $("details").append(row("Code", w.code), row("Name", w.name), row("System", w.os || "?"),
+    $("details").append(row("Code", w.code), row("Worker", w.id), row("System", w.os || "?"),
       row("Memory", w.mem_mb ? Math.round(w.mem_mb / 1024) + " GB" : "?"), row("CPU cores", w.cpus || "?"));
     $("ask").hidden = false;
   } catch (e) {

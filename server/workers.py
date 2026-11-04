@@ -1,6 +1,6 @@
 # Workers: machines that moderators run, which parse queued replays. A worker enrolls once (it shows a
 # code, its owner approves it on the site), then talks to the API with its own token:
-#   POST /api/worker/enroll {name, mem_mb, cpus, os}   a device code to poll with, and a code to approve
+#   POST /api/worker/enroll {id, mem_mb, cpus, os}     a device code to poll with, and a code to approve
 #   POST /api/worker/enroll/poll {device_code}         202 until approved, then its id and token, once
 #   POST /api/worker/heartbeat {mem_mb, ...}           what it has; back come its settings and the releases to run
 #   POST /api/worker/claim                             204, or a job with where to fetch its demo and upload to
@@ -14,7 +14,7 @@
 #   POST /api/workers/<id> {paused, max_minutes}, DELETE /api/workers/<id>
 #   GET, POST /api/pins {parser, worker, curves_version}   (admins) the releases workers run
 #   GET  /api/overview                                 queue and worker counts, the pins, the memory estimate
-import hashlib, json, math, secrets, time, urllib.parse
+import hashlib, json, math, re, secrets, time, urllib.parse
 
 from . import auth, db, jobs, settings, storage
 from .web import respond
@@ -22,6 +22,7 @@ from .web import respond
 DEMOS = "https://storage.uk.cloud.ovh.net/v1/AUTH_10286efc0d334efd917d476d7183232e/BAR/demos/"
 PARSER_RELEASES = "https://github.com/burnhamrobertp/BAR-Rewind/releases/download/"
 WORKER_RELEASES = "https://github.com/burnhamrobertp/bar-rewind-worker/releases/download/"
+WORKER_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 CODE_LETTERS = "BCDFGHJKLMNPQRSTVWXZ"
 ENROLL_SECONDS = 15 * 60
 PENDING_ENROLLMENTS = 50
@@ -54,7 +55,12 @@ def enroll(req):
     if db.one("SELECT count(*) AS n FROM enrollments WHERE expires > ?", now)["n"] >= PENDING_ENROLLMENTS:
         return respond(429, {"error": "too many workers are waiting to be approved: try again later"})
     body = req.json()
-    info = {"name": short(body, "name", 64) or "worker", "mem_mb": number(body, "mem_mb"), "cpus": number(body, "cpus", 0, 4096),
+    worker_id = short(body, "id", 64).lower()
+    if not WORKER_ID.fullmatch(worker_id):
+        return respond(400, {"error": "a worker enrolls with an id it picked, a UUID"})
+    if db.one("SELECT 1 FROM workers WHERE id = ?", worker_id):
+        return respond(409, {"error": "a worker with that id is already enrolled"})
+    info = {"id": worker_id, "mem_mb": number(body, "mem_mb"), "cpus": number(body, "cpus", 0, 4096),
             "os": short(body, "os", 64)}
     device_code = secrets.token_urlsafe(32)
     user_code = "".join(secrets.choice(CODE_LETTERS) for _ in range(8))
@@ -94,13 +100,15 @@ def link_info(req, user, code):
 def approve(req, user):
     code = short(req.json(), "code", 16).upper()
     token = secrets.token_urlsafe(32)
-    worker_id = secrets.token_hex(8)
     with db.tx() as c:
         row = c.execute("SELECT * FROM enrollments WHERE user_code = ? AND expires > ? AND token IS NULL", (code, int(time.time()))).fetchone()
         if row is None:
             return respond(404, {"error": "no worker is waiting with that code: it may have expired"})
         info = json.loads(row["info"])
-        db.insert(c, "workers", {"id": worker_id, "owner_uid": user["uid"], "owner_name": user["name"], "name": info["name"],
+        worker_id = info["id"]
+        if c.execute("SELECT 1 FROM workers WHERE id = ?", (worker_id,)).fetchone():
+            return respond(409, {"error": "a worker with that id is already enrolled"})
+        db.insert(c, "workers", {"id": worker_id, "owner_uid": user["uid"], "owner_name": user["name"],
                                  "token_hash": digest(token), "created": int(time.time()), "mem_mb": info["mem_mb"] or 0,
                                  "cpus": info["cpus"], "os": info["os"]})
         db.update(c, "enrollments", "user_code", code, {"worker_id": worker_id, "token": token})
@@ -316,7 +324,7 @@ def fail(req, worker, replay_id):
     return respond(200, {})
 
 
-PUBLIC = ("id", "owner_name", "name", "created", "last_seen", "mem_mb", "mem_free_mb", "cpus", "disk_free_mb", "os",
+PUBLIC = ("id", "owner_name", "created", "last_seen", "mem_mb", "mem_free_mb", "cpus", "disk_free_mb", "os",
           "version", "parser_version", "paused", "pause_reason", "max_minutes", "failures")
 
 

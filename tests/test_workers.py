@@ -1,14 +1,15 @@
-import json, time
+import json, time, uuid
 
 from server import db, settings, storage, workers
 from tests.helpers import ServerTest
 
 REPLAY = "0123456789abcdef0123456789abcdef"
+DESK = "3f2a9c1e-0b7d-4e5a-9c61-2d8f0a4b7e13"
 
 
 class WorkerTest(ServerTest):
     def enroll(self, mem_mb=32768, owner="1"):
-        start = self.call("POST", "/api/worker/enroll", {"name": "desk", "mem_mb": mem_mb, "cpus": 8, "os": "windows"}).json()
+        start = self.call("POST", "/api/worker/enroll", {"id": str(uuid.uuid4()), "mem_mb": mem_mb, "cpus": 8, "os": "windows"}).json()
         cookie = self.session(uid=owner, token=f"tok-{owner}")
         self.assertEqual(200, self.call("POST", "/api/link", {"code": start["user_code"]}, cookie).status)
         got = self.call("POST", "/api/worker/enroll/poll", {"device_code": start["device_code"]}).json()
@@ -27,12 +28,12 @@ class WorkerTest(ServerTest):
 
 class Enrollment(WorkerTest):
     def test_a_worker_gets_its_token_once_its_owner_approves(self):
-        start = self.call("POST", "/api/worker/enroll", {"name": "desk", "mem_mb": 16384}).json()
+        start = self.call("POST", "/api/worker/enroll", {"id": DESK.upper(), "mem_mb": 16384}).json()
         self.assertTrue(start["verify_url"].startswith("https://rewind.example/link.html?code="))
         self.assertEqual(202, self.call("POST", "/api/worker/enroll/poll", {"device_code": start["device_code"]}).status)
         cookie = self.session()
         info = self.call("GET", "/api/link/" + start["user_code"].lower(), cookie=cookie).json()
-        self.assertEqual(("desk", 16384), (info["name"], info["mem_mb"]))
+        self.assertEqual((DESK, 16384), (info["id"], info["mem_mb"]))
         self.call("POST", "/api/link", {"code": start["user_code"]}, cookie)
 
         got = self.call("POST", "/api/worker/enroll/poll", {"device_code": start["device_code"]})
@@ -41,9 +42,15 @@ class Enrollment(WorkerTest):
         worker = db.one("SELECT * FROM workers")
         self.assertEqual(("1", "Mod", 16384), (worker["owner_uid"], worker["owner_name"], worker["mem_mb"]))
         self.assertNotIn(got.json()["token"], json.dumps(worker))
+        self.assertEqual(DESK, got.json()["worker_id"])
+
+    def test_a_worker_picks_a_uuid_nobody_else_has(self):
+        self.assertEqual(400, self.call("POST", "/api/worker/enroll", {"id": "desk"}).status)
+        _, worker_id, _ = self.enroll()
+        self.assertEqual(409, self.call("POST", "/api/worker/enroll", {"id": worker_id}).status)
 
     def test_approving_needs_a_session_and_a_live_code(self):
-        start = self.call("POST", "/api/worker/enroll", {}).json()
+        start = self.call("POST", "/api/worker/enroll", {"id": DESK}).json()
         self.assertEqual(401, self.call("POST", "/api/link", {"code": start["user_code"]}).status)
         self.assertEqual(404, self.call("POST", "/api/link", {"code": "BBBB-BBBB"}, self.session()).status)
         db.conn().execute("UPDATE enrollments SET expires = 0")
@@ -51,7 +58,7 @@ class Enrollment(WorkerTest):
 
     def test_only_so_many_wait_at_once(self):
         for _ in range(workers.PENDING_ENROLLMENTS):
-            self.call("POST", "/api/worker/enroll", {})
+            self.call("POST", "/api/worker/enroll", {"id": str(uuid.uuid4())})
         self.assertEqual(429, self.call("POST", "/api/worker/enroll", {}).status)
 
     def test_an_unknown_token_is_refused(self):
@@ -280,7 +287,7 @@ class Cancel(WorkerTest):
 
 class Overview(WorkerTest):
     def test_the_list_says_who_parses_what_and_what_waiting_jobs_need(self):
-        auth, _, cookie = self.enroll()
+        auth, desk, cookie = self.enroll()
         self.worker_call(auth, "/api/worker/heartbeat", {})
         for i in range(5):
             self.queue(f"{i:032x}", status="done", peak_mem_mb=20000, finished=i)
@@ -288,7 +295,7 @@ class Overview(WorkerTest):
         self.queue("b" * 32, created=2)
         self.worker_call(auth, "/api/worker/claim")
         listed = {j["id"]: j for j in self.call("GET", "/api/jobs", cookie=cookie).json()["jobs"]}
-        self.assertEqual(("desk", True), (listed["a" * 32]["worker"], listed["a" * 32]["cancellable"]))
+        self.assertEqual((desk, "Mod", True), (listed["a" * 32]["worker"], listed["a" * 32]["worker_owner"], listed["a" * 32]["cancellable"]))
         self.assertEqual(25000, listed["b" * 32]["needs_mb"])
         self.assertFalse(listed["0" * 32]["cancellable"])
         stranger = self.session(uid="9", token="tok-9")

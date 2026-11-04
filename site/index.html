@@ -96,7 +96,7 @@ function statusCell(job) {
   if (job.status === "running" || job.status === "queued") {
     if (job.status === "running") cell.append(el("div", { class: "bar" }, el("div", { style: `width:${job.pct || 0}%` })));
     cell.append(el("div", { class: "stage" }, job.stage || ""));
-    if (job.worker) cell.append(el("div", { class: "stage" }, "on " + job.worker));
+    if (job.worker) cell.append(el("div", { class: "stage", title: job.worker }, `on ${job.worker_owner || "?"}'s worker ${job.worker.slice(0, 8)}`));
     if (job.needs_mb) cell.append(el("div", { class: "stage" }, `needs about ${Math.ceil(job.needs_mb / 1024)} GB of memory`));
   } else if (job.status === "failed") {
     cell.append(el("div", { class: "stage", title: job.error || "" }, (job.error || "").split("\n")[0].slice(0, 160)));

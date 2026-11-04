@@ -40,7 +40,6 @@ CREATE TABLE IF NOT EXISTS workers (
     id TEXT PRIMARY KEY,
     owner_uid TEXT NOT NULL,
     owner_name TEXT NOT NULL,
-    name TEXT NOT NULL,
     token_hash TEXT NOT NULL UNIQUE,
     created INTEGER NOT NULL,
     last_seen INTEGER,
