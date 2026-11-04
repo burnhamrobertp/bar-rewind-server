@@ -81,9 +81,6 @@ def submit(req, user):
     if existing and existing["status"] != "failed" and not (existing["status"] == "done" and (outdated(existing) or not stored(existing))):
         return respond(200, {"job": public(existing)})
     now = int(time.time())
-    daily = settings.number("daily-limit", 30)
-    if db.one("SELECT count(*) AS n FROM jobs WHERE uid = ? AND created > ?", user["uid"], now - 86400)["n"] >= daily:
-        return respond(429, {"error": f"you queued {daily} replays in the last day: try again later"})
     if db.one("SELECT count(*) AS n FROM jobs WHERE status IN ('queued', 'running')")["n"] >= settings.number("queue-limit", 50):
         return respond(429, {"error": "the queue is full: try again later"})
 

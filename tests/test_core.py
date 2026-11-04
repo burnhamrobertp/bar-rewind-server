@@ -85,14 +85,6 @@ class Queue(ServerTest):
         self.outside.replay(REPLAY, minutes=151)
         self.assertEqual(400, self.call("POST", "/api/jobs", {"replay": REPLAY}, cookie).status)
 
-        from server import settings
-        settings._cache["daily-limit"] = "1"
-        for i in range(2):
-            rid = f"{i:032x}"
-            self.outside.replay(rid)
-            status = self.call("POST", "/api/jobs", {"replay": rid}, cookie).status
-        self.assertEqual(429, status)
-
     def test_listing_is_newest_first(self):
         cookie = self.session()
         for i, created in enumerate((100, 300, 200)):
