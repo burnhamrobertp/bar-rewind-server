@@ -37,10 +37,38 @@ def public(job, version=None):
 
 
 def list_jobs(req, user):
+    from . import workers
     jobs = db.rows("SELECT * FROM jobs ORDER BY created DESC")
     version = curves_version()
+    names = {w["id"]: w["name"] for w in db.rows("SELECT id, name FROM workers")}
+    ratio = workers.memory_ratio()
+    admin = auth.is_admin(user)
+    listed = []
+    for j in jobs:
+        shown = public(j, version)
+        shown["cancellable"] = j["status"] in ("queued", "running") and (j["uid"] == user["uid"] or admin)
+        if j["status"] == "running":
+            shown["worker"] = names.get(j["worker"])
+        if j["status"] == "queued":
+            shown["needs_mb"] = workers.estimate_mb(j, ratio)
+        listed.append(shown)
 
-    return respond(200, {"jobs": [public(j, version) for j in jobs]})
+    return respond(200, {"jobs": listed})
+
+
+def cancel(req, user, replay_id):
+    """Takes a job out of the queue; a worker parsing it hears so at its next report and stops"""
+    with db.tx() as c:
+        job = c.execute("SELECT uid, status FROM jobs WHERE id = ?", (replay_id,)).fetchone()
+        if job is None:
+            return respond(404, {"error": "no such job"})
+        if job["uid"] != user["uid"] and not auth.is_admin(user):
+            return respond(409, {"error": "only whoever queued it, or an admin, can cancel it"})
+        if job["status"] not in ("queued", "running"):
+            return respond(409, {"error": "it already finished"})
+        c.execute("DELETE FROM jobs WHERE id = ?", (replay_id,))
+
+    return respond(200, {})
 
 
 def submit(req, user):

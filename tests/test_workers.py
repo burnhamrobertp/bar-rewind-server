@@ -70,9 +70,12 @@ class Heartbeat(WorkerTest):
         worker = db.one("SELECT * FROM workers")
         self.assertEqual((65536, 9000, None), (worker["mem_mb"], worker["disk_free_mb"], worker["mem_free_mb"]))
 
-    def test_only_admins_pin_releases(self):
+    def test_only_admins_pin_releases_and_a_curves_version_is_a_number(self):
         _, _, cookie = self.enroll()
         self.assertEqual(403, self.call("POST", "/api/pins", {"parser": "v9"}, cookie).status)
+        settings._cache["admin-ids"] = "1"
+        self.assertEqual(400, self.call("POST", "/api/pins", {"curves_version": "v12"}, cookie).status)
+        self.assertEqual(200, self.call("POST", "/api/pins", {"curves_version": "12"}, cookie).status)
 
 
 class Claim(WorkerTest):
@@ -251,3 +254,47 @@ class Tidy(WorkerTest):
         self.assertEqual(200, self.call("DELETE", f"/api/workers/{worker_id}", cookie=cookie).status)
         self.assertEqual(("queued", None), tuple(db.one("SELECT status, worker FROM jobs").values()))
         self.assertEqual(401, self.worker_call(auth, "/api/worker/heartbeat").status)
+
+
+class Cancel(WorkerTest):
+    def test_whoever_queued_it_or_an_admin_can_cancel_a_waiting_job(self):
+        self.queue()
+        stranger = self.session(uid="9", token="tok-9")
+        self.assertEqual(409, self.call("POST", f"/api/jobs/{REPLAY}/cancel", cookie=stranger).status)
+        self.assertEqual(200, self.call("POST", f"/api/jobs/{REPLAY}/cancel", cookie=self.session()).status)
+        self.assertIsNone(db.one("SELECT id FROM jobs"))
+        self.assertEqual(404, self.call("POST", f"/api/jobs/{REPLAY}/cancel", cookie=self.session()).status)
+        self.queue()
+        settings._cache["admin-ids"] = "9"
+        self.assertEqual(200, self.call("POST", f"/api/jobs/{REPLAY}/cancel", cookie=stranger).status)
+
+    def test_a_running_job_stops_on_its_worker_and_a_finished_one_stays(self):
+        auth, _, cookie = self.enroll()
+        self.queue()
+        self.worker_call(auth, "/api/worker/claim")
+        self.assertEqual(200, self.call("POST", f"/api/jobs/{REPLAY}/cancel", cookie=cookie).status)
+        self.assertEqual(409, self.worker_call(auth, f"/api/worker/jobs/{REPLAY}/progress", {"stage": "x"}).status)
+        self.queue(status="done")
+        self.assertEqual(409, self.call("POST", f"/api/jobs/{REPLAY}/cancel", cookie=cookie).status)
+
+
+class Overview(WorkerTest):
+    def test_the_list_says_who_parses_what_and_what_waiting_jobs_need(self):
+        auth, _, cookie = self.enroll()
+        self.worker_call(auth, "/api/worker/heartbeat", {})
+        for i in range(5):
+            self.queue(f"{i:032x}", status="done", peak_mem_mb=20000, finished=i)
+        self.queue("a" * 32, created=1)
+        self.queue("b" * 32, created=2)
+        self.worker_call(auth, "/api/worker/claim")
+        listed = {j["id"]: j for j in self.call("GET", "/api/jobs", cookie=cookie).json()["jobs"]}
+        self.assertEqual(("desk", True), (listed["a" * 32]["worker"], listed["a" * 32]["cancellable"]))
+        self.assertEqual(25000, listed["b" * 32]["needs_mb"])
+        self.assertFalse(listed["0" * 32]["cancellable"])
+        stranger = self.session(uid="9", token="tok-9")
+        seen = {j["id"]: j for j in self.call("GET", "/api/jobs", cookie=stranger).json()["jobs"]}
+        self.assertFalse(seen["a" * 32]["cancellable"] or seen["b" * 32]["cancellable"])
+
+        o = self.call("GET", "/api/overview", cookie=cookie).json()
+        self.assertEqual((1, 1, 1, 1, False), (o["queued"], o["running"], o["workers_online"], o["workers"], o["admin"]))
+        self.assertEqual(500, o["mb_per_player_minute"])

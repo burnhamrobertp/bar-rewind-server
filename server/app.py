@@ -6,6 +6,7 @@
 #   POST /api/jobs {"replay": ...}   queue a replay (a bar-rts.com link or its id)
 #   GET  /api/jobs/<id>/watch        a signed download URL for a parsed replay, and its barrewind:// link
 #   GET  /api/jobs/<id>/log          the latest attempt's log, as text
+#   POST /api/jobs/<id>/cancel       take a queued or running job out (whoever queued it, or an admin)
 # and, under /api/worker/, the workers' own API.
 import mimetypes, re
 from pathlib import Path
@@ -50,6 +51,11 @@ def signed_in_route(req, user):
     m = re.fullmatch(r"/api/jobs/([0-9a-f]{32})/(watch|log)", req.path)
     if m and req.method == "GET":
         return (jobs.watch if m.group(2) == "watch" else jobs.job_log)(req, user, m.group(1))
+    m = re.fullmatch(r"/api/jobs/([0-9a-f]{32})/cancel", req.path)
+    if m and req.method == "POST":
+        return jobs.cancel(req, user, m.group(1))
+    if req.path == "/api/overview" and req.method == "GET":
+        return workers.overview(req, user)
     m = re.fullmatch(r"/api/link/([A-Za-z-]{1,16})", req.path)
     if m and req.method == "GET":
         return workers.link_info(req, user, m.group(1))

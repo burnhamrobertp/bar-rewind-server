@@ -13,6 +13,7 @@
 #   GET  /api/workers                                  their workers (an admin's: everyone's)
 #   POST /api/workers/<id> {paused, max_minutes}, DELETE /api/workers/<id>
 #   GET, POST /api/pins {parser, worker, curves_version}   (admins) the releases workers run
+#   GET  /api/overview                                 queue and worker counts, the pins, the memory estimate
 import hashlib, json, math, secrets, time, urllib.parse
 
 from . import auth, db, jobs, settings, storage
@@ -159,6 +160,11 @@ def mem_per_size(done):
     return ratios[math.ceil(len(ratios) * 0.9) - 1]
 
 
+def memory_ratio():
+    return mem_per_size(db.rows("SELECT duration_ms, players, peak_mem_mb FROM jobs WHERE status = 'done' AND peak_mem_mb > 0 "
+                                "ORDER BY finished DESC LIMIT 500"))
+
+
 def estimate_mb(job, ratio):
     return None if ratio is None else int(ratio * size(job) * 1.25)
 
@@ -189,8 +195,7 @@ def claim(req, worker):
     if parser and worker["parser_version"] != parser:
         return respond(204)
     now = int(time.time())
-    ratio = mem_per_size(db.rows("SELECT duration_ms, players, peak_mem_mb FROM jobs WHERE status = 'done' AND peak_mem_mb > 0 "
-                                 "ORDER BY finished DESC LIMIT 500"))
+    ratio = memory_ratio()
     online = db.one("SELECT max(mem_mb) AS m FROM workers WHERE paused = 0 AND last_seen > ?", now - STALE)["m"] or 0
     biggest = max(online, worker["mem_mb"])
     with db.tx() as c:
@@ -362,6 +367,16 @@ def remove(req, user, worker_id):
     return respond(200, {})
 
 
+def overview(req, user):
+    now = int(time.time())
+    counts = {r["status"]: r["n"] for r in db.rows("SELECT status, count(*) AS n FROM jobs GROUP BY status")}
+    online = db.one("SELECT count(*) AS n FROM workers WHERE paused = 0 AND last_seen > ?", now - STALE)["n"]
+
+    return respond(200, {"queued": counts.get("queued", 0), "running": counts.get("running", 0), "workers_online": online,
+                         "workers": db.one("SELECT count(*) AS n FROM workers")["n"], "pins": pins(),
+                         "mb_per_player_minute": memory_ratio(), "admin": auth.is_admin(user)})
+
+
 def get_pins(req, user):
     return respond(200, pins())
 
@@ -370,6 +385,9 @@ def set_pins(req, user):
     if not auth.is_admin(user):
         return respond(403, {"error": "admins only"})
     body = req.json()
+    version = short(body, "curves_version", 16)
+    if version and not version.isdigit():
+        return respond(400, {"error": "the .curves version is a number, like 11"})
     with db.tx() as c:
         for key in ("parser", "worker", "curves_version"):
             if key in body:
