@@ -21,10 +21,28 @@ class Widgets(WorkerTest):
         self.assertEqual(403, self.upload(cookie=other).status)
         self.assertEqual(400, self.upload([{"name": "../x.lua", "text": ""}]).status)
         self.assertEqual(400, self.upload([{"name": "x.txt", "text": ""}]).status)
+        self.assertEqual(400, self.upload([{"name": "..lua", "text": ""}]).status)
         self.assertEqual(400, self.upload([SET[0], SET[0]]).status)
         listed = self.upload().json()
         self.assertEqual(["a_widget.lua", "b_widget.lua"], [f["name"] for f in listed["files"]])
         self.assertNotIn("text", listed["files"][0])
+
+    def test_the_set_stays_out_of_the_database_so_its_backup_never_has_it(self):
+        self.upload([{"name": "a_widget.lua", "text": "-- kept off the backup"}])
+        with open(db._path, "rb") as f:
+            self.assertNotIn(b"kept off the backup", f.read())
+        self.assertEqual(["a_widget.lua"], [p.name for p in widgets.folder().iterdir()])
+        self.call("DELETE", "/api/widgets/a_widget.lua", cookie=self.admin)
+        self.assertEqual([], list(widgets.folder().iterdir()))
+        self.assertEqual([], [p.name for p in widgets.folder().parent.iterdir() if p.name.startswith(".widgets")])
+
+    def test_adding_keeps_the_rest_and_replaces_one_of_the_same_name_and_removing_takes_one(self):
+        self.upload([SET[0]])
+        self.upload([SET[1], {"name": "a_widget.lua", "text": "-- newer"}])
+        self.assertEqual({"a_widget.lua": "-- newer", "b_widget.lua": "-- two"}, {f["name"]: f["body"] for f in widgets.files()})
+        listed = self.call("DELETE", "/api/widgets/a_widget.lua", cookie=self.admin).json()
+        self.assertEqual(["b_widget.lua"], [f["name"] for f in listed["files"]])
+        self.assertEqual(403, self.call("DELETE", "/api/widgets/b_widget.lua", cookie=self.session("2", "Bea", "tok-2")).status)
 
     def test_a_worker_gets_the_set_only_with_its_token(self):
         self.upload()
@@ -51,7 +69,7 @@ class Widgets(WorkerTest):
         self.worker_call(self.auth, f"/api/worker/jobs/{claim['job']['id']}/done", {"size": 20, "packed_size": 10, "curves_version": 11})
         self.assertFalse(self.call("GET", "/api/jobs", cookie=self.admin).json()["jobs"][0]["missing_widgets"])
 
-        self.upload([SET[0]])
+        self.call("DELETE", "/api/widgets/b_widget.lua", cookie=self.admin)
         self.assertTrue(self.call("GET", "/api/jobs", cookie=self.admin).json()["jobs"][0]["missing_widgets"])
         self.outside.replay(REPLAY)
         self.assertEqual("queued", self.call("POST", "/api/jobs", {"replay": REPLAY}, self.admin).json()["job"]["status"])

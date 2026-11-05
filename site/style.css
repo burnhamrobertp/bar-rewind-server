@@ -69,5 +69,8 @@ main.narrow { max-width: 820px; }
 .card p { margin: 0 0 10px; }
 .card .for { color: var(--dim); font-size: 13px; }
 .card .button { align-self: flex-start; margin-top: auto; }
-.files { margin: 0 0 12px; padding-left: 18px; }
+table.widgets { margin-bottom: 12px; }
+button.remove { color: var(--bad); background: none; border-color: transparent; padding: 2px 8px; font-size: 15px; line-height: 1; }
+button.remove:hover { border-color: var(--bad); }
+.add-widget { display: inline-flex; align-items: center; gap: 10px; color: var(--dim); font-size: 13px; }
 .version { color: var(--dim); font-size: 13px; min-height: 1.45em; }
