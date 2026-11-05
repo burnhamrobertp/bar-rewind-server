@@ -44,6 +44,15 @@ class Widgets(WorkerTest):
         self.assertEqual(["b_widget.lua"], [f["name"] for f in listed["files"]])
         self.assertEqual(403, self.call("DELETE", "/api/widgets/b_widget.lua", cookie=self.session("2", "Bea", "tok-2")).status)
 
+    def test_an_admin_downloads_one_and_nobody_else_can(self):
+        self.upload()
+        r = self.call("GET", "/api/widgets/b_widget.lua", cookie=self.admin)
+        self.assertEqual((200, b"-- two"), (r.status, r.body))
+        self.assertEqual('attachment; filename="b_widget.lua"', r.headers["content-disposition"])
+        self.assertEqual(404, self.call("GET", "/api/widgets/nope.lua", cookie=self.admin).status)
+        self.assertEqual(403, self.call("GET", "/api/widgets/b_widget.lua", cookie=self.session("2", "Bea", "tok-2")).status)
+        self.assertEqual(401, self.call("GET", "/api/widgets/b_widget.lua").status)
+
     def test_a_worker_gets_the_set_only_with_its_token(self):
         self.upload()
         self.assertEqual(401, self.worker_call({}, "/api/worker/widgets").status)

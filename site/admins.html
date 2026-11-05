@@ -89,7 +89,7 @@ async function changeWidgets(path, options) {
 function widgetRow(f) {
   const remove = el("button", { class: "remove", title: "Remove " + f.name, "aria-label": "Remove " + f.name }, "\u2715");
   remove.onclick = () => { if (confirm(`Remove ${f.name}? Workers stop running it in new parses.`)) changeWidgets("api/widgets/" + encodeURIComponent(f.name), { method: "DELETE" }); };
-  return el("tr", {}, el("td", {}, el("code", {}, f.name)), el("td", { class: "stage" }, `${Math.max(1, Math.round(f.size / 1024))} KB`), el("td", { class: "actions" }, remove));
+  return el("tr", {}, el("td", {}, el("a", { href: "api/widgets/" + encodeURIComponent(f.name), download: f.name, title: "Download " + f.name }, el("code", {}, f.name))), el("td", { class: "stage" }, `${Math.max(1, Math.round(f.size / 1024))} KB`), el("td", { class: "actions" }, remove));
 }
 
 function showWidgets(set) {

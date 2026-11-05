@@ -8,7 +8,7 @@
 #   GET  /api/jobs/<id>/log          the latest attempt's log, as text
 #   POST /api/jobs/<id>/cancel       take a queued or running job out (whoever queued it, or an admin)
 #   GET, POST /api/admins {uid}, DELETE /api/admins/<uid>   (admins) who else is an admin
-#   GET, POST /api/widgets {files: [{name, text}]}, DELETE /api/widgets/<name>   (admins) the widgets every parse runs
+#   GET, POST /api/widgets {files: [{name, text}]}, GET, DELETE /api/widgets/<name>   (admins) the widgets every parse runs
 # and, under /api/worker/, the workers' own API.
 import mimetypes, re, urllib.parse
 from pathlib import Path
@@ -79,6 +79,8 @@ def signed_in_route(req, user):
     if req.path == "/api/widgets":
         return widgets.listing(req, user) if req.method == "GET" else widgets.add(req, user)
     m = re.fullmatch(r"/api/widgets/([A-Za-z0-9_.-]{1,80})", req.path)
+    if m and req.method == "GET":
+        return widgets.download(req, user, m.group(1))
     if m and req.method == "DELETE":
         return widgets.remove(req, user, m.group(1))
     if req.path == "/api/pins":

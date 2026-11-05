@@ -6,7 +6,7 @@ import hashlib, os, re, shutil, tempfile, threading
 from pathlib import Path
 
 from . import auth, db
-from .web import respond
+from .web import Response, respond
 
 NAME = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9_.-]{0,63}\.lua")
 MAX_BYTES = 1 << 20
@@ -80,6 +80,17 @@ def add(req, user):
     store([{"name": name, "text": text} for name, text in kept.items()])
 
     return listing(req, user)
+
+
+def download(req, user, name):
+    if not auth.is_admin(user):
+        return respond(403, {"error": "admins only"})
+    found = next((f for f in files() if f["name"] == name), None)
+    if found is None:
+        return respond(404, {"error": "no such widget"})
+
+    return Response(200, found["body"].encode(), {"content-type": "text/plain; charset=utf-8", "cache-control": "no-store",
+                                                  "content-disposition": f'attachment; filename="{name}"'})
 
 
 def remove(req, user, name):
