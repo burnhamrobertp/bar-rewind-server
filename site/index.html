@@ -8,11 +8,9 @@
 </head>
 <body>
 <header>
-  <h1>BAR Rewind</h1>
+  <h1><a href="./">BAR Rewind</a></h1>
   <span class="grow"></span>
-  <a class="button" href="player.html">Get the player</a>
-  <a class="button" href="workers.html">Workers</a>
-  <span id="who"></span>
+  <div id="account"></div>
 </header>
 <main>
   <div id="signin" class="panel signin" hidden>
@@ -27,8 +25,9 @@
         <button class="primary" id="queue">Queue</button>
       </form>
       <p class="error" id="submit-error"></p>
-      <p class="note">Parsing takes a few minutes per replay, longer for big team games. Parsed replays are kept for 60 days.
-        Watch needs BAR and the player installed.</p>
+      <p class="note">Parsing takes a few minutes per replay, longer for big team games. Parsed replays are kept for 60 days.</p>
+      <p class="note">Watch opens a replay in your own BAR install through the BAR Rewind player.
+        <a href="player.html">Get the player</a> before your first Watch.</p>
     </div>
     <div class="panel">
       <table>
@@ -38,29 +37,14 @@
     </div>
   </div>
 </main>
+<script src="site.js"></script>
 <script>
-const $ = id => document.getElementById(id);
 const STALLED_AFTER = 180;
 let timer = null;
-
-function ago(t) {
-  const s = Math.max(0, Math.round(Date.now() / 1000 - t));
-  if (s < 60) return s + "s ago";
-  if (s < 3600) return Math.floor(s / 60) + "m ago";
-  if (s < 86400) return Math.floor(s / 3600) + "h ago";
-  return Math.floor(s / 86400) + "d ago";
-}
 
 function clock(ms) {
   const s = Math.round(ms / 1000);
   return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
-}
-
-function el(tag, attrs = {}, ...children) {
-  const e = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) k === "class" ? e.className = v : e.setAttribute(k, v);
-  for (const c of children) if (c != null) e.append(c);
-  return e;
 }
 
 async function api(path, options) {
@@ -74,7 +58,7 @@ async function api(path, options) {
 function showSignin(why) {
   $("app").hidden = true;
   $("signin").hidden = false;
-  $("who").textContent = "";
+  hideAccount();
   const reason = why || new URLSearchParams(location.search).get("signin");
   $("signin-error").textContent = reason === "denied" ? "That Discord account doesn't have a role that's allowed in."
     : reason === "failed" ? "Discord sign-in didn't complete. Try again." : "";
@@ -202,7 +186,6 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden && !$
       location.href = "link.html?code=" + encodeURIComponent(linking);
       return;
     }
-    $("who").replaceChildren(me.name + " · ", el("a", { href: "api/logout" }, "sign out"));
     $("signin").hidden = true;
     $("app").hidden = false;
     refresh();
