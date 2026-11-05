@@ -92,6 +92,8 @@ function statusCell(job) {
     cell.append(el("div", { class: "stage", title: job.error || "" }, (job.error || "").split("\n")[0].slice(0, 160)));
   } else if (job.outdated) {
     cell.append(el("div", { class: "stage" }, "parsed for an older player: parse it again to watch"));
+  } else if (job.missing_widgets) {
+    cell.append(el("div", { class: "stage" }, "parsed without the current parse widgets: parse it again for their events"));
   } else if (job.status === "done") {
     cell.append(el("div", { class: "stage" }, `${size(job.packed_size || 0)} download, parsed ${ago(job.finished)}`));
   }
@@ -130,6 +132,11 @@ function row(job) {
     const d = el("button", { title: "Save the .curves file" }, "Download");
     d.onclick = () => watch(job, true);
     actions.append(w, " ", d);
+    if (job.missing_widgets) {
+      const r = el("button", { title: "Parse it again with the current parse widgets" }, "Re-parse");
+      r.onclick = () => queue(job.id);
+      actions.append(" ", r);
+    }
   } else if (job.status === "failed") {
     const r = el("button", { title: "Queue it again" }, "Retry");
     r.onclick = () => queue(job.id);

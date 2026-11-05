@@ -3,6 +3,7 @@
 #   POST /api/worker/enroll {id, mem_mb, cpus, os}     a device code to poll with, and a code to approve
 #   POST /api/worker/enroll/poll {device_code}         202 until approved, then its id and token, once
 #   POST /api/worker/heartbeat {mem_mb, ...}           what it has; back come its settings and the releases to run
+#   POST /api/worker/widgets                           the parse widgets to run, and the hash to report having them
 #   POST /api/worker/claim                             204, or a job with where to fetch its demo and upload to
 #   POST /api/worker/jobs/<id>/progress {stage, pct, peak_mem_mb}   also the job's heartbeat; 409 once it isn't theirs
 #   POST /api/worker/jobs/<id>/uploads                 fresh upload URLs, for an upload that outlives the first
@@ -16,7 +17,7 @@
 #   GET  /api/overview                                 queue and worker counts, the pins, the memory estimate
 import hashlib, json, math, re, secrets, time, urllib.parse
 
-from . import auth, db, jobs, settings, storage
+from . import auth, db, jobs, settings, storage, widgets
 from .web import respond
 
 DEMOS = "https://storage.uk.cloud.ovh.net/v1/AUTH_10286efc0d334efd917d476d7183232e/BAR/demos/"
@@ -144,14 +145,14 @@ def heartbeat(req, worker):
     for key in ("mem_mb", "mem_free_mb", "cpus", "disk_free_mb"):
         if number(body, key) is not None:
             fields[key] = number(body, key)
-    for key in ("os", "version", "parser_version"):
+    for key in ("os", "version", "parser_version", "widgets"):
         if key in body:
             fields[key] = short(body, key, 64)
     with db.tx() as c:
         db.update(c, "workers", "id", worker["id"], fields)
 
     return respond(200, {"poll_seconds": POLL_SECONDS, "paused": bool(worker["paused"]), "pause_reason": worker["pause_reason"],
-                         "max_minutes": worker["max_minutes"], "releases": releases()})
+                         "max_minutes": worker["max_minutes"], "releases": releases(), "widgets": widgets.digest()})
 
 
 def size(job):
@@ -201,6 +202,8 @@ def claim(req, worker):
         return respond(204)
     parser = pins().get("parser")
     if parser and worker["parser_version"] != parser:
+        return respond(204)
+    if worker["widgets"] != widgets.digest():
         return respond(204)
     now = int(time.time())
     ratio = memory_ratio()
@@ -285,7 +288,7 @@ def finish(req, worker, replay_id):
             "status": "done", "stage": "done", "pct": 100, "finished": now, "error": None, "size": number(body, "size"),
             "packed_size": packed, "curves_version": number(body, "curves_version"), "event_count": number(body, "event_count") or len(events),
             "events": events, "peak_mem_mb": max(job["peak_mem_mb"] or 0, number(body, "peak_mem_mb") or 0) or None,
-            "log_key": job["log_key"] if has_log else None})
+            "log_key": job["log_key"] if has_log else None, "widgets": worker["widgets"]})
         db.update(c, "workers", "id", worker["id"], {"failures": 0, "last_seen": now})
 
     return respond(200, {})
@@ -325,7 +328,7 @@ def fail(req, worker, replay_id):
 
 
 PUBLIC = ("id", "owner_name", "created", "last_seen", "mem_mb", "mem_free_mb", "cpus", "disk_free_mb", "os",
-          "version", "parser_version", "paused", "pause_reason", "max_minutes", "failures")
+          "version", "parser_version", "widgets", "paused", "pause_reason", "max_minutes", "failures")
 
 
 def listing(req, user):
@@ -335,7 +338,7 @@ def listing(req, user):
         rows = db.rows("SELECT * FROM workers WHERE owner_uid = ? ORDER BY created", user["uid"])
     running = {r["worker"]: r["id"] for r in db.rows("SELECT id, worker FROM jobs WHERE status = 'running'")}
 
-    return respond(200, {"workers": [{**{k: w[k] for k in PUBLIC}, "job": running.get(w["id"])} for w in rows]})
+    return respond(200, {"workers": [{**{k: w[k] for k in PUBLIC}, "job": running.get(w["id"])} for w in rows], "widgets": widgets.digest()})
 
 
 def managed(user, worker_id):

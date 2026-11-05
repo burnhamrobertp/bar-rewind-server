@@ -32,7 +32,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     event_count INTEGER,
     events TEXT,
     peak_mem_mb INTEGER,
-    too_small_mb INTEGER NOT NULL DEFAULT 0
+    too_small_mb INTEGER NOT NULL DEFAULT 0,
+    widgets TEXT
 );
 CREATE INDEX IF NOT EXISTS jobs_status ON jobs (status, created);
 
@@ -53,7 +54,8 @@ CREATE TABLE IF NOT EXISTS workers (
     paused INTEGER NOT NULL DEFAULT 0,
     pause_reason TEXT,
     max_minutes INTEGER,
-    failures INTEGER NOT NULL DEFAULT 0
+    failures INTEGER NOT NULL DEFAULT 0,
+    widgets TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS enrollments (
@@ -70,6 +72,11 @@ CREATE TABLE IF NOT EXISTS pins (
     value TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS widgets (
+    name TEXT PRIMARY KEY,
+    body TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS admins (
     uid TEXT PRIMARY KEY,
     added INTEGER NOT NULL,
@@ -84,6 +91,9 @@ CREATE TABLE IF NOT EXISTS users (
 );
 """
 
+# columns that came after their table: CREATE TABLE IF NOT EXISTS leaves an existing table as it was
+ADDED_COLUMNS = (("jobs", "widgets", "TEXT"), ("workers", "widgets", "TEXT NOT NULL DEFAULT ''"))
+
 _local = threading.local()
 _path = None
 
@@ -92,6 +102,9 @@ def init(path):
     global _path
     _path = path
     conn().executescript(SCHEMA)
+    for table, column, kind in ADDED_COLUMNS:
+        if column not in {r["name"] for r in conn().execute(f"PRAGMA table_info({table})")}:
+            conn().execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
 
 
 def conn():

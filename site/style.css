@@ -70,4 +70,5 @@ main.narrow { max-width: 820px; }
 .card p { margin: 0 0 10px; }
 .card .for { color: var(--dim); font-size: 13px; }
 .card .button { align-self: flex-start; margin-top: auto; }
+.files { margin: 0 0 12px; padding-left: 18px; }
 .version { color: var(--dim); font-size: 13px; min-height: 1.45em; }
