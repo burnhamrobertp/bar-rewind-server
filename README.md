@@ -74,7 +74,7 @@ The server needs Python 3 and boto3; the tests need only Python.
 
 ## What it costs
 
-A t4g.small (about $12/month) and its 20 GB disk (about $2). R2 storage is about $0.015/GB-month and
+A t4g.micro (about $6/month, 1 GB of memory plus 1 GB of swap) and its 20 GB disk (about $2). R2 storage is about $0.015/GB-month and
 downloads are free. A monthly AWS Budgets alarm (default $25) emails you.
 
 AI disclosure: written with assistance from Claude Code.

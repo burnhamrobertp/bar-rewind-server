@@ -4,7 +4,7 @@ Description: BAR Rewind server - one small EC2 box reached only through a Cloudf
 Parameters:
   InstanceType:
     Type: String
-    Default: t4g.small
+    Default: t4g.micro
   ImageId:
     Type: AWS::EC2::Image::Id
   Repository:

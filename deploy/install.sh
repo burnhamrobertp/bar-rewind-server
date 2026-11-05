@@ -20,6 +20,14 @@ install_deb() {
   rm "/tmp/$name.deb"
 }
 
+if [ ! -f /swapfile ]; then
+  fallocate -l 1G /swapfile
+  chmod 600 /swapfile
+  mkswap -q /swapfile
+  echo "/swapfile none swap sw 0 0" >> /etc/fstab
+fi
+swapon --show=NAME --noheadings | grep -qx /swapfile || swapon /swapfile
+
 if ! python3 -c "import boto3" 2>/dev/null; then
   apt-get update -q
   apt-get install -y -q python3 python3-boto3
