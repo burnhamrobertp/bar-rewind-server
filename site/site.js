@@ -17,13 +17,18 @@ function ago(t) {
 
 const signedIn = fetch("api/me", { credentials: "same-origin" }).then(r => r.ok ? r.json() : null).catch(() => null);
 
+const TABS = [["./", "Replays"], ["workers.html", "Workers"], ["downloads.html", "Downloads"]];
+
+function showTabs() {
+  const here = location.pathname.split("/").pop() || "./";
+  $("tabs").replaceChildren(...TABS.map(([href, label]) =>
+    el("a", href === here || (href === "./" && here === "index.html") ? { href, "aria-current": "page" } : { href }, label)));
+}
+
 function showAccount(me) {
   const menu = el("details", { class: "account" },
     el("summary", {}, me.name),
-    el("nav", { class: "menu" },
-      el("a", { href: "workers.html" }, "Workers", el("span", { class: "hint" }, me.admin ? "Every worker, and the releases they run" : "Machines you parse replays on")),
-      el("hr"),
-      el("a", { href: "api/logout" }, "Sign out")));
+    el("nav", { class: "menu" }, el("a", { href: "api/logout" }, "Sign out")));
   document.addEventListener("click", e => { if (!menu.contains(e.target)) menu.open = false; });
   document.addEventListener("keydown", e => { if (e.key === "Escape") menu.open = false; });
   $("account").replaceChildren(menu);
@@ -33,4 +38,5 @@ function hideAccount() {
   $("account").replaceChildren();
 }
 
+if ($("tabs")) showTabs();
 signedIn.then(me => { if (me) showAccount(me); });
