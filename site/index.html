@@ -13,6 +13,7 @@
   <div id="account"></div>
 </header>
 <main>
+  <nav class="tabs" id="tabs"></nav>
   <div id="signin" class="panel signin" hidden>
     <p>Sign in with the Discord account that holds your BAR moderation role.</p>
     <a class="button primary" href="api/login">Sign in with Discord</a>
@@ -20,14 +21,14 @@
   </div>
   <div id="app" hidden>
     <div class="panel">
+      <p class="intro">Paste a replay to have it parsed, then Watch it in BAR with the timeline: scrub, rewind, change speed.</p>
       <form id="submit">
         <input type="text" id="replay" placeholder="https://www.bar-rts.com/replays/... or the replay id" autocomplete="off">
         <button class="primary" id="queue">Queue</button>
       </form>
       <p class="error" id="submit-error"></p>
       <p class="note">Parsing takes a few minutes per replay, longer for big team games. Parsed replays are kept for 60 days.</p>
-      <p class="note">Watch opens a replay in your own BAR install through the BAR Rewind player.
-        <a href="player.html">Get the player</a> before your first Watch.</p>
+      <p class="note">Watch needs the BAR Rewind player: <a href="downloads.html#player">get it</a> before your first Watch.</p>
     </div>
     <div class="panel">
       <table>
