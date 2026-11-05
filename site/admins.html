@@ -36,12 +36,8 @@
     <h2>Parse widgets</h2>
     <p class="intro">Extra widgets every worker runs in every parse. Workers fetch them from this server, so nobody sets
       them up by hand. A worker without the current set takes no jobs, and replays parsed with another set can be parsed again.</p>
-    <ul id="widget-files" class="files"></ul>
-    <form id="widgets-form">
-      <input type="file" id="widget-input" multiple accept=".lua">
-      <button class="primary">Replace with these</button>
-      <button type="button" id="widgets-clear">Remove all</button>
-    </form>
+    <table class="widgets"><tbody id="widget-files"></tbody></table>
+    <label class="add-widget">Add or update widgets <input type="file" id="widget-input" multiple accept=".lua"></label>
   </div>
 </main>
 <script src="site.js"></script>
@@ -86,28 +82,28 @@ $("add").onsubmit = async e => {
   } catch (err) { $("error").textContent = err.message; }
 };
 
+async function changeWidgets(path, options) {
+  try { showWidgets(await api(path, options)); } catch (e) { $("error").textContent = e.message; }
+}
+
+function widgetRow(f) {
+  const remove = el("button", { class: "remove", title: "Remove " + f.name, "aria-label": "Remove " + f.name }, "\u2715");
+  remove.onclick = () => { if (confirm(`Remove ${f.name}? Workers stop running it in new parses.`)) changeWidgets("api/widgets/" + encodeURIComponent(f.name), { method: "DELETE" }); };
+  return el("tr", {}, el("td", {}, el("a", { href: "api/widgets/" + encodeURIComponent(f.name), download: f.name, title: "Download " + f.name }, el("code", {}, f.name))), el("td", { class: "stage" }, `${Math.max(1, Math.round(f.size / 1024))} KB`), el("td", { class: "actions" }, remove));
+}
+
 function showWidgets(set) {
-  $("widget-files").replaceChildren(...(set.files.length
-    ? set.files.map(f => el("li", {}, el("code", {}, f.name), ` ${Math.max(1, Math.round(f.size / 1024))} KB`))
-    : [el("li", { class: "note" }, "None: parses run without extra widgets.")]));
+  $("widget-files").replaceChildren(...(set.files.length ? set.files.map(widgetRow)
+    : [el("tr", {}, el("td", { class: "note", colspan: 3 }, "None: parses run without extra widgets."))]));
 }
 
-async function replaceWidgets(files) {
-  try {
-    showWidgets(await api("api/widgets", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ files }) }));
-  } catch (e) { $("error").textContent = e.message; }
-}
-
-$("widgets-form").onsubmit = async e => {
-  e.preventDefault();
+$("widget-input").onchange = async () => {
   const picked = [...$("widget-input").files];
   if (!picked.length) return;
-  if (!confirm(`Replace the parse widgets with ${picked.map(f => f.name).join(", ")}?`)) return;
-  await replaceWidgets(await Promise.all(picked.map(async f => ({ name: f.name, text: await f.text() }))));
+  const files = await Promise.all(picked.map(async f => ({ name: f.name, text: await f.text() })));
+  await changeWidgets("api/widgets", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ files }) });
   $("widget-input").value = "";
 };
-
-$("widgets-clear").onclick = () => { if (confirm("Remove every parse widget?")) replaceWidgets([]); };
 
 async function refresh() {
   try { show(await api("api/admins")); } catch (e) { $("error").textContent = e.message; }
