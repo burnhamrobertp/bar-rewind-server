@@ -61,7 +61,7 @@ function show({ admins, others }) {
   $("error").textContent = "";
   $("admins").replaceChildren(...admins.map(row));
   const picked = $("who").value;
-  $("who").replaceChildren(el("option", { value: "" }, others.length ? "Pick someone..." : "Everyone who has signed in is an admin"),
+  $("who").replaceChildren(el("option", { value: "" }, others.length ? "Pick someone..." : "No one else has signed in yet"),
     ...others.map(o => el("option", { value: o.uid }, o.name)));
   if (others.some(o => o.uid === picked)) $("who").value = picked;
   $("add-button").disabled = !others.length;
