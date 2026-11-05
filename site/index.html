@@ -47,6 +47,10 @@ function clock(ms) {
   return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
 }
 
+function size(bytes) {
+  return bytes >= 1048576 ? (bytes / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(bytes / 1024)) + " KB";
+}
+
 async function api(path, options) {
   const r = await fetch(path, { credentials: "same-origin", ...options });
   const body = await r.json().catch(() => ({}));
@@ -87,7 +91,7 @@ function statusCell(job) {
   } else if (job.outdated) {
     cell.append(el("div", { class: "stage" }, "parsed for an older player: parse it again to watch"));
   } else if (job.status === "done") {
-    cell.append(el("div", { class: "stage" }, `${Math.round((job.packed_size || 0) / 1048576)} MB download, parsed ${ago(job.finished)}`));
+    cell.append(el("div", { class: "stage" }, `${size(job.packed_size || 0)} download, parsed ${ago(job.finished)}`));
   }
   return cell;
 }
