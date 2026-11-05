@@ -21,10 +21,10 @@
   </div>
   <div class="panel">
     <p id="overview" class="note"></p>
-    <form id="pins" hidden>
-      <input type="text" id="pin-parser" placeholder="parser release, e.g. 0.5.0" autocomplete="off">
-      <input type="text" id="pin-worker" placeholder="worker release, e.g. 0.1.0" autocomplete="off">
-      <input type="text" id="pin-curves" placeholder=".curves version, e.g. 11" pattern="\d*" autocomplete="off">
+    <form id="pins" class="pins" hidden>
+      <label>Parser release <input type="text" id="pin-parser" placeholder="e.g. 0.5.0" autocomplete="off"></label>
+      <label>Worker release <input type="text" id="pin-worker" placeholder="e.g. 0.1.0" autocomplete="off"></label>
+      <label>.curves version <input type="text" id="pin-curves" placeholder="e.g. 11" pattern="\d*" autocomplete="off"></label>
       <button class="primary">Pin</button>
     </form>
     <p class="note" id="pins-note" hidden>Workers move to the pinned releases at their next heartbeat; one on another parser
