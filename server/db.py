@@ -70,6 +70,12 @@ CREATE TABLE IF NOT EXISTS pins (
     value TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS admins (
+    uid TEXT PRIMARY KEY,
+    added INTEGER NOT NULL,
+    added_by TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS users (
     uid TEXT PRIMARY KEY,
     name TEXT NOT NULL,
