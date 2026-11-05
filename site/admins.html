@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BAR Rewind admins</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1><a href="./">BAR Rewind</a></h1>
+  <span class="grow"></span>
+  <a class="nav" href="downloads.html">Downloads</a>
+  <div id="account"></div>
+</header>
+<main>
+  <nav class="tabs" id="tabs"></nav>
+  <div class="panel">
+    <h2>Admins</h2>
+    <p class="intro">Admins can cancel anyone's replay, see and manage every worker, and pin the releases workers run.
+      A change here applies straight away.</p>
+    <form id="add">
+      <select id="who" aria-label="Someone who has signed in"></select>
+      <button class="primary" id="add-button">Make admin</button>
+    </form>
+    <p class="note">Only people who have signed in here at least once can be picked.</p>
+  </div>
+  <div class="panel">
+    <table>
+      <thead><tr><th>Admin</th><th>Since</th><th></th></tr></thead>
+      <tbody id="admins"><tr><td colspan="3" class="note">Loading...</td></tr></tbody>
+    </table>
+    <p class="error" id="error"></p>
+  </div>
+</main>
+<script src="site.js"></script>
+<script>
+async function api(path, options) {
+  const r = await fetch(path, { credentials: "same-origin", ...options });
+  const body = await r.json().catch(() => ({}));
+  if (r.status === 401) { location.href = "./"; throw new Error("sign in"); }
+  if (!r.ok) throw new Error(body.error || r.statusText);
+  return body;
+}
+
+function row(a) {
+  const since = a.owner ? "set in the server's settings" : `added by ${a.added_by} ${ago(a.added)}`;
+  const actions = el("td", { class: "actions" });
+  if (!a.owner) {
+    const remove = el("button", {}, "Remove");
+    remove.onclick = async () => {
+      if (!confirm(`Stop ${a.name} being an admin?`)) return;
+      try { show(await api("api/admins/" + a.uid, { method: "DELETE" })); } catch (e) { $("error").textContent = e.message; }
+    };
+    actions.append(remove);
+  }
+  return el("tr", {}, el("td", {}, a.name), el("td", { class: "stage" }, since), actions);
+}
+
+function show({ admins, others }) {
+  $("error").textContent = "";
+  $("admins").replaceChildren(...admins.map(row));
+  const picked = $("who").value;
+  $("who").replaceChildren(el("option", { value: "" }, others.length ? "Pick someone..." : "Everyone who has signed in is an admin"),
+    ...others.map(o => el("option", { value: o.uid }, o.name)));
+  if (others.some(o => o.uid === picked)) $("who").value = picked;
+  $("add-button").disabled = !others.length;
+}
+
+async function refresh() {
+  try { show(await api("api/admins")); } catch (e) { $("error").textContent = e.message; }
+}
+
+$("add").onsubmit = async e => {
+  e.preventDefault();
+  if (!$("who").value) return;
+  try {
+    show(await api("api/admins", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ uid: $("who").value }) }));
+  } catch (err) { $("error").textContent = err.message; }
+};
+
+refresh();
+setInterval(() => { if (!document.hidden) refresh(); }, 15000);
+</script>
+</body>
+</html>

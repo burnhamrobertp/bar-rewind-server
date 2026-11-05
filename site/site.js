@@ -17,11 +17,10 @@ function ago(t) {
 
 const signedIn = fetch("api/me", { credentials: "same-origin" }).then(r => r.ok ? r.json() : null).catch(() => null);
 
-const TABS = [["./", "Replays"], ["workers.html", "Workers"]];
-
-function showTabs() {
+function showTabs(admin) {
   const here = location.pathname.split("/").pop() || "./";
-  $("tabs").replaceChildren(...TABS.map(([href, label]) =>
+  const tabs = [["./", "Replays"], ["workers.html", "Workers"], ...(admin ? [["admins.html", "Admins"]] : [])];
+  $("tabs").replaceChildren(...tabs.map(([href, label]) =>
     el("a", href === here || (href === "./" && here === "index.html") ? { href, "aria-current": "page" } : { href }, label)));
 }
 
@@ -47,7 +46,11 @@ async function showVersion(line) {
   } catch (e) {}
 }
 
-if ($("tabs")) showTabs();
+if ($("tabs")) showTabs(false);
 if (location.pathname.split("/").pop().startsWith("download")) document.querySelector("header .nav").setAttribute("aria-current", "page");
 for (const line of document.querySelectorAll("[data-repo]")) showVersion(line);
-signedIn.then(me => { if (me) showAccount(me); });
+signedIn.then(me => {
+  if (!me) return;
+  showAccount(me);
+  if ($("tabs")) showTabs(me.admin);
+});
