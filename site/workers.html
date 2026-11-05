@@ -32,6 +32,17 @@
     <p class="note" id="pins-note" hidden>Workers move to the pinned releases at their next heartbeat; one on another parser
       gets no jobs until it has. An empty field unpins it. Parses older than the .curves version show as outdated.</p>
   </div>
+  <div class="panel" id="widgets-panel" hidden>
+    <h2>Parse widgets</h2>
+    <p class="intro">Extra widgets every worker runs in every parse. Workers fetch them from this server, so nobody sets
+      them up by hand. A worker without the current set takes no jobs, and replays parsed with another set can be parsed again.</p>
+    <ul id="widget-files" class="files"></ul>
+    <form id="widgets-form">
+      <input type="file" id="widget-input" multiple accept=".lua">
+      <button class="primary">Replace with these</button>
+      <button type="button" id="widgets-clear">Remove all</button>
+    </form>
+  </div>
   <div class="panel">
     <table>
       <thead><tr><th>Worker</th><th class="hide-narrow">Machine</th><th>Status</th><th></th></tr></thead>
@@ -43,8 +54,7 @@
 <script src="site.js"></script>
 <script>
 const OFFLINE_AFTER = 180;
-
-
+let currentWidgets = "";
 
 async function api(path, options) {
   const r = await fetch(path, { credentials: "same-origin", ...options });
@@ -65,7 +75,8 @@ function row(w) {
   const online = w.last_seen && Date.now() / 1000 - w.last_seen < OFFLINE_AFTER;
   const label = w.paused ? "paused" : !online ? "offline" : w.job ? "parsing" : "idle";
   const status = el("td", {}, el("span", { class: "badge " + (w.paused || !online ? "stalled" : w.job ? "running" : "done") }, label),
-    el("div", { class: "stage" }, w.pause_reason || (w.last_seen ? "seen " + ago(w.last_seen) : "never seen")));
+    el("div", { class: "stage" }, w.pause_reason || (w.last_seen ? "seen " + ago(w.last_seen) : "never seen")),
+    w.widgets !== currentWidgets ? el("div", { class: "stage" }, "no jobs until it has the current parse widgets") : null);
   const machine = el("td", { class: "hide-narrow" }, `${w.os || "?"}, ${w.mem_mb ? Math.round(w.mem_mb / 1024) + " GB" : "?"}, ${w.cpus || "?"} cores`,
     el("div", { class: "stage" }, `worker ${w.version || "?"}, parser ${w.parser_version || "?"}` +
       (w.disk_free_mb ? `, ${Math.round(w.disk_free_mb / 1024)} GB free` : "") + (w.max_minutes ? `, replays up to ${w.max_minutes} min` : "")));
@@ -100,7 +111,33 @@ async function showOverview() {
     $("pins").hidden = $("pins-note").hidden = false;
     for (const [key, id] of Object.entries(pinFields)) $(id).value = pins[key] || "";
   }
+  if (o.admin) showWidgets(await api("api/widgets"));
 }
+
+function showWidgets(set) {
+  $("widgets-panel").hidden = false;
+  $("widget-files").replaceChildren(...(set.files.length
+    ? set.files.map(f => el("li", {}, el("code", {}, f.name), ` ${Math.max(1, Math.round(f.size / 1024))} KB`))
+    : [el("li", { class: "note" }, "None: parses run without extra widgets.")]));
+}
+
+async function replaceWidgets(files) {
+  try {
+    showWidgets(await api("api/widgets", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ files }) }));
+  } catch (e) { $("error").textContent = e.message; }
+  refresh();
+}
+
+$("widgets-form").onsubmit = async e => {
+  e.preventDefault();
+  const picked = [...$("widget-input").files];
+  if (!picked.length) return;
+  if (!confirm(`Replace the parse widgets with ${picked.map(f => f.name).join(", ")}?`)) return;
+  await replaceWidgets(await Promise.all(picked.map(async f => ({ name: f.name, text: await f.text() }))));
+  $("widget-input").value = "";
+};
+
+$("widgets-clear").onclick = () => { if (confirm("Remove every parse widget?")) replaceWidgets([]); };
 
 $("pins").onsubmit = async e => {
   e.preventDefault();
@@ -119,7 +156,8 @@ $("pins").onsubmit = async e => {
 async function refresh() {
   try {
     await showOverview();
-    const { workers } = await api("api/workers");
+    const { workers, widgets } = await api("api/workers");
+    currentWidgets = widgets;
     $("workers").replaceChildren(...(workers.length ? workers.map(row) : [el("tr", {}, el("td", { colspan: 4, class: "note" }, "No workers yet."))]));
   } catch (e) { $("error").textContent = e.message; }
 }

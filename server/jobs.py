@@ -24,28 +24,35 @@ def outdated(job, version=None):
     return job["status"] == "done" and (job["curves_version"] or 0) < (curves_version() if version is None else version)
 
 
+def missing_widgets(job, current=None):
+    from . import widgets
+
+    return job["status"] == "done" and (job["widgets"] or "") != (widgets.digest() if current is None else current)
+
+
 def stored(job):
     return bool(job["curves_key"]) and storage.store.size(job["curves_key"]) is not None
 
 
-def public(job, version=None):
+def public(job, version=None, current_widgets=None):
     fields = {k: job[k] for k in PUBLIC}
     fields["players"] = json.loads(job["players"])
 
-    return {**fields, "outdated": outdated(job, version), "has_log": bool(job["log_key"]),
+    return {**fields, "outdated": outdated(job, version), "missing_widgets": missing_widgets(job, current_widgets), "has_log": bool(job["log_key"]),
             "events": json.loads(job["events"]) if job["events"] else []}
 
 
 def list_jobs(req, user):
-    from . import workers
+    from . import widgets, workers
     jobs = db.rows("SELECT * FROM jobs ORDER BY created DESC")
     version = curves_version()
+    current_widgets = widgets.digest()
     admin = auth.is_admin(user)
     owners = {w["id"]: w["owner_name"] for w in db.rows("SELECT id, owner_name FROM workers")}
     ratio = workers.memory_ratio() if any(j["status"] == "queued" for j in jobs) else None
     listed = []
     for j in jobs:
-        shown = public(j, version)
+        shown = public(j, version, current_widgets)
         shown["cancellable"] = j["status"] in ("queued", "running") and (j["uid"] == user["uid"] or admin)
         if j["status"] == "running":
             shown.update(worker=j["worker"], worker_owner=owners.get(j["worker"]))
@@ -78,7 +85,7 @@ def submit(req, user):
     replay_id = m.group(1)
 
     existing = db.one("SELECT * FROM jobs WHERE id = ?", replay_id)
-    if existing and existing["status"] != "failed" and not (existing["status"] == "done" and (outdated(existing) or not stored(existing))):
+    if existing and existing["status"] != "failed" and not (existing["status"] == "done" and (outdated(existing) or missing_widgets(existing) or not stored(existing))):
         return respond(200, {"job": public(existing)})
     now = int(time.time())
     if db.one("SELECT count(*) AS n FROM jobs WHERE status IN ('queued', 'running')")["n"] >= settings.number("queue-limit", 50):
