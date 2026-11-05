@@ -18,12 +18,20 @@ class SignIn(ServerTest):
     def test_no_role_no_session(self):
         self.outside.member("tok-good", "7", roles=())
         r = self.call("GET", "/api/callback", query={"code": "good", "state": "x"}, cookie="st=x")
-        self.assertEqual("/?signin=denied", r.headers["location"])
+        self.assertEqual("/signin.html?signin=denied", r.headers["location"])
         self.assertFalse(any(c.startswith("s=") for c in r.cookies))
 
     def test_a_state_that_does_not_match_its_cookie_fails(self):
         r = self.call("GET", "/api/callback", query={"code": "good", "state": "x"}, cookie="st=y")
-        self.assertEqual("/?signin=failed", r.headers["location"])
+        self.assertEqual("/signin.html?signin=failed", r.headers["location"])
+
+    def test_sign_in_comes_back_to_the_page_it_was_for_and_only_on_this_site(self):
+        self.outside.member("tok-good", "7", "Ada")
+        for asked, back in (("/link.html?code=BCDF-GHJK", "/link.html?code=BCDF-GHJK"), ("//evil.example/x", "/"), ("https://evil.example", "/")):
+            login = self.call("GET", "/api/login", query={"next": asked})
+            nx = next(c for c in login.cookies if c.startswith("nx=")).split(";")[0]
+            r = self.call("GET", "/api/callback", query={"code": "good", "state": "x"}, cookie="st=x; " + nx)
+            self.assertEqual(back, r.headers["location"])
 
     def test_a_forged_or_missing_session_is_refused(self):
         self.assertEqual(401, self.call("GET", "/api/me").status)
@@ -35,7 +43,7 @@ class SignIn(ServerTest):
         self.outside.members["tok-1"]["roles"] = []
         r = self.call("GET", "/api/me", cookie=cookie)
         self.assertEqual(403, r.status)
-        self.assertIn("s=; Path=/api; Max-Age=0; HttpOnly; Secure; SameSite=Lax", r.cookies)
+        self.assertIn("s=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax", r.cookies)
 
     def test_discord_being_unreachable_keeps_the_session(self):
         cookie = self.session(checked=0)
@@ -129,10 +137,22 @@ class Watch(ServerTest):
 
 class Site(ServerTest):
     def test_pages_come_from_site_and_nothing_outside_it(self):
-        r = self.call("GET", "/")
+        r = self.call("GET", "/", cookie=self.session())
         self.assertEqual((200, "text/html"), (r.status, r.headers["content-type"]))
-        self.assertEqual(404, self.call("GET", "/../server/app.py").status)
+        self.assertEqual(404, self.call("GET", "/../server/app.py", cookie=self.session()).status)
         self.assertEqual(404, self.call("GET", "/api/nothing", cookie=self.session()).status)
+
+    def test_signed_out_gets_nothing_but_the_sign_in_page(self):
+        self.assertEqual(200, self.call("GET", "/signin.html").status)
+        for page in ("/", "/admins.html", "/downloads.html"):
+            r = self.call("GET", page)
+            self.assertEqual(302, r.status)
+            self.assertTrue(r.headers["location"].startswith("/signin.html?next="))
+        r = self.call("GET", "/link.html", query={"code": "BCDF-GHJK"})
+        self.assertEqual("/signin.html?next=%2Flink.html%3Fcode%3DBCDF-GHJK", r.headers["location"])
+        for asset in ("/site.js", "/style.css"):
+            self.assertEqual(401, self.call("GET", asset).status)
+        self.assertEqual(401, self.call("GET", "/site.js", cookie="s=e30.AAAA").status)
 
     def test_jobs_past_their_day_are_dropped(self):
         with db.tx() as c:

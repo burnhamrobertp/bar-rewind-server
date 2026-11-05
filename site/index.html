@@ -15,12 +15,7 @@
 </header>
 <main>
   <nav class="tabs" id="tabs"></nav>
-  <div id="signin" class="panel signin" hidden>
-    <p>Sign in with the Discord account that holds your BAR moderation role.</p>
-    <a class="button primary" href="api/login">Sign in with Discord</a>
-    <p class="error" id="signin-error"></p>
-  </div>
-  <div id="app" hidden>
+  <div id="app">
     <div class="panel">
       <p class="intro">Paste a replay to have it parsed, then Watch it in BAR with the timeline: scrub, rewind, change speed.</p>
       <form id="submit">
@@ -56,18 +51,13 @@ function size(bytes) {
 async function api(path, options) {
   const r = await fetch(path, { credentials: "same-origin", ...options });
   const body = await r.json().catch(() => ({}));
-  if (r.status === 401 || r.status === 403) { showSignin(r.status === 403 ? "denied" : null); throw new Error(body.error || "sign in"); }
+  if (r.status === 401 || r.status === 403) { signIn(r.status === 403 ? "denied" : null); throw new Error(body.error || "sign in"); }
   if (!r.ok) throw new Error(body.error || r.statusText);
   return body;
 }
 
-function showSignin(why) {
-  $("app").hidden = true;
-  $("signin").hidden = false;
-  hideAccount();
-  const reason = why || new URLSearchParams(location.search).get("signin");
-  $("signin-error").textContent = reason === "denied" ? "That Discord account doesn't have a role that's allowed in."
-    : reason === "failed" ? "Discord sign-in didn't complete. Try again." : "";
+function signIn(why) {
+  location.href = "signin.html?next=" + encodeURIComponent(location.pathname) + (why ? "&signin=" + why : "");
 }
 
 async function watch(job, download) {
@@ -170,9 +160,7 @@ async function refresh() {
     const { jobs } = await api("api/jobs");
     $("jobs").replaceChildren(...(jobs.length ? jobs.map(row) : [el("tr", {}, el("td", { colspan: 4, class: "note" }, "Nothing queued yet."))]));
     busy = jobs.some(j => j.status === "queued" || j.status === "running");
-  } catch (e) {
-    if ($("app").hidden) return;
-  }
+  } catch (e) {}
   timer = setTimeout(refresh, document.hidden ? 60000 : busy ? 5000 : 30000);
 }
 
@@ -188,22 +176,9 @@ async function queue(text) {
 }
 
 $("submit").onsubmit = e => { e.preventDefault(); if ($("replay").value.trim()) queue($("replay").value.trim()); };
-document.addEventListener("visibilitychange", () => { if (!document.hidden && !$("app").hidden) refresh(); });
+document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
 
-(async () => {
-  try {
-    const me = await api("api/me");
-    const linking = sessionStorage.getItem("link-code");
-    if (linking) {
-      sessionStorage.removeItem("link-code");
-      location.href = "link.html?code=" + encodeURIComponent(linking);
-      return;
-    }
-    $("signin").hidden = true;
-    $("app").hidden = false;
-    refresh();
-  } catch (e) { showSignin(); }
-})();
+refresh();
 </script>
 </body>
 </html>
