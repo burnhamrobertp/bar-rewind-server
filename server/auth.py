@@ -68,7 +68,7 @@ def allowed(member):
 
 
 def is_admin(user):
-    return user["uid"] in settings.ids("admin-ids")
+    return user["uid"] in settings.ids("admin-ids") or db.one("SELECT 1 FROM admins WHERE uid = ?", user["uid"]) is not None
 
 
 def login(req):

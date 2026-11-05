@@ -7,11 +7,12 @@
 #   GET  /api/jobs/<id>/watch        a signed download URL for a parsed replay, and its barrewind:// link
 #   GET  /api/jobs/<id>/log          the latest attempt's log, as text
 #   POST /api/jobs/<id>/cancel       take a queued or running job out (whoever queued it, or an admin)
+#   GET, POST /api/admins {uid}, DELETE /api/admins/<uid>   (admins) who else is an admin
 # and, under /api/worker/, the workers' own API.
 import mimetypes, re
 from pathlib import Path
 
-from . import auth, jobs, storage, workers
+from . import admins, auth, jobs, storage, workers
 from .web import Response, cookie, redirect, respond
 
 SITE = Path(__file__).resolve().parent.parent / "site"
@@ -68,6 +69,11 @@ def signed_in_route(req, user):
         return workers.change(req, user, m.group(1))
     if m and req.method == "DELETE":
         return workers.remove(req, user, m.group(1))
+    if req.path == "/api/admins":
+        return admins.listing(req, user) if req.method == "GET" else admins.add(req, user)
+    m = re.fullmatch(r"/api/admins/(\d{1,20})", req.path)
+    if m and req.method == "DELETE":
+        return admins.remove(req, user, m.group(1))
     if req.path == "/api/pins":
         return workers.get_pins(req, user) if req.method == "GET" else workers.set_pins(req, user)
 

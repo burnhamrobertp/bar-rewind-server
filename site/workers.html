@@ -8,23 +8,25 @@
 </head>
 <body>
 <header>
-  <h1><a href="./" style="color: inherit; text-decoration: none">BAR Rewind</a></h1>
+  <h1><a href="./">BAR Rewind</a></h1>
   <span class="grow"></span>
-  <a class="button" href="./">Back to replays</a>
+  <a class="nav" href="downloads.html">Downloads</a>
+  <div id="account"></div>
 </header>
 <main>
+  <nav class="tabs" id="tabs"></nav>
   <div class="panel">
     <h2>Workers</h2>
-    <p class="note">Machines that parse queued replays. To add one, download the worker from its
-      <a href="https://github.com/burnhamrobertp/bar-rewind-worker/releases/latest">latest release</a> and run it:
-      it opens this site to be approved. If Windows warns that it protected your PC: <b>More info</b> &gt; <b>Run anyway</b>.</p>
+    <p class="intro">Machines that moderators lend to parse queued replays. Yours show here once approved, where you can
+      pause, limit or remove them.</p>
+    <p class="note">To lend one, <a href="download-worker.html">get the worker</a>.</p>
   </div>
   <div class="panel">
     <p id="overview" class="note"></p>
-    <form id="pins" hidden>
-      <input type="text" id="pin-parser" placeholder="parser release, e.g. 0.5.0" autocomplete="off">
-      <input type="text" id="pin-worker" placeholder="worker release, e.g. 0.1.0" autocomplete="off">
-      <input type="text" id="pin-curves" placeholder=".curves version, e.g. 11" pattern="\d*" autocomplete="off">
+    <form id="pins" class="pins" hidden>
+      <label>Parser release <input type="text" id="pin-parser" placeholder="e.g. 0.5.0" autocomplete="off"></label>
+      <label>Worker release <input type="text" id="pin-worker" placeholder="e.g. 0.1.0" autocomplete="off"></label>
+      <label>.curves version <input type="text" id="pin-curves" placeholder="e.g. 11" pattern="\d*" autocomplete="off"></label>
       <button class="primary">Pin</button>
     </form>
     <p class="note" id="pins-note" hidden>Workers move to the pinned releases at their next heartbeat; one on another parser
@@ -38,21 +40,11 @@
     <p class="error" id="error"></p>
   </div>
 </main>
+<script src="site.js"></script>
 <script>
-const $ = id => document.getElementById(id);
 const OFFLINE_AFTER = 180;
 
-function el(tag, attrs = {}, ...children) {
-  const e = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) k === "class" ? e.className = v : e.setAttribute(k, v);
-  for (const c of children) if (c != null) e.append(c);
-  return e;
-}
 
-function ago(t) {
-  const s = Math.max(0, Math.round(Date.now() / 1000 - t));
-  return s < 60 ? s + "s ago" : s < 3600 ? Math.floor(s / 60) + "m ago" : s < 86400 ? Math.floor(s / 3600) + "h ago" : Math.floor(s / 86400) + "d ago";
-}
 
 async function api(path, options) {
   const r = await fetch(path, { credentials: "same-origin", ...options });

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BAR Rewind worker</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1><a href="./">BAR Rewind</a></h1>
+  <span class="grow"></span>
+  <a class="nav" href="downloads.html">Downloads</a>
+  <div id="account"></div>
+</header>
+<main class="narrow">
+  <p class="crumbs"><a href="downloads.html">Downloads</a> / Worker</p>
+  <div class="panel">
+    <h2>Worker <span class="for">for lending your machine</span></h2>
+    <p class="intro">Parses queued replays for this site in the background. Only run it on a machine you're happy to
+      share; you can pause or remove it any time on the <a href="workers.html">Workers</a> page.</p>
+    <p class="needs">Needs BAR installed. It takes no job while BAR is running, or while less than 4 GB of memory or
+      10 GB of disk is free. No admin rights needed.</p>
+    <p class="version" data-repo="burnhamrobertp/bar-rewind-worker"></p>
+    <p class="note">Showing <span id="os-name">Windows</span> steps. <a href="#" id="other-os">Show the Linux steps</a></p>
+  </div>
+  <div class="panel" data-os="windows">
+    <p><a class="button primary" href="https://github.com/burnhamrobertp/bar-rewind-worker/releases/latest/download/bar-rewind-worker.exe">Download bar-rewind-worker.exe</a></p>
+    <ol class="steps">
+      <li>In the folder you downloaded it to, type <code>cmd</code> in the address bar and press Enter, then run
+        <code>bar-rewind-worker.exe install</code>. If Windows warns that it protected your PC: <b>More info</b> &gt; <b>Run anyway</b>.</li>
+      <li>It opens this site with a code: check it matches, then approve. From then on it starts when you sign in to Windows.</li>
+    </ol>
+    <p class="note">To remove it: <code>bar-rewind-worker.exe uninstall</code>. Its files are in <code>%LOCALAPPDATA%\bar-rewind-worker</code>.</p>
+  </div>
+  <div class="panel" data-os="linux" hidden>
+    <p><a class="button primary" href="https://github.com/burnhamrobertp/bar-rewind-worker/releases/latest/download/bar-rewind-worker-linux">Download bar-rewind-worker</a></p>
+    <ol class="steps">
+      <li>Install it: <code>chmod +x ~/Downloads/bar-rewind-worker-linux &amp;&amp; ~/Downloads/bar-rewind-worker-linux install</code></li>
+      <li>It opens this site with a code: check it matches, then approve. From then on it runs as a systemd user service.</li>
+    </ol>
+    <p class="note">To remove it: <code>bar-rewind-worker-linux uninstall</code>. Its files are in <code>~/.local/share/bar-rewind-worker</code>.</p>
+  </div>
+  <p class="note"><a href="https://github.com/burnhamrobertp/bar-rewind-worker/releases/latest">Release notes and every file on GitHub</a></p>
+</main>
+<script src="site.js"></script>
+<script>
+let os = "windows";
+
+function show(next) {
+  os = next;
+  for (const block of document.querySelectorAll("[data-os]")) block.hidden = block.dataset.os !== os;
+  $("os-name").textContent = os === "linux" ? "Linux" : "Windows";
+  $("other-os").textContent = os === "linux" ? "Show the Windows steps" : "Show the Linux steps";
+}
+
+const platform = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || navigator.userAgent;
+show(/linux|x11/i.test(platform) && !/android/i.test(navigator.userAgent) ? "linux" : "windows");
+$("other-os").onclick = e => { e.preventDefault(); show(os === "linux" ? "windows" : "linux"); };
+</script>
+</body>
+</html>
