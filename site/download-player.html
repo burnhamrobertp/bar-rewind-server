@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BAR Rewind player</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1><a href="./">BAR Rewind</a></h1>
+  <span class="grow"></span>
+  <a class="nav" href="downloads.html">Downloads</a>
+  <div id="account"></div>
+</header>
+<main class="narrow">
+  <p class="crumbs"><a href="downloads.html">Downloads</a> / Player</p>
+  <div class="panel">
+    <h2>Player <span class="for">for watching replays</span></h2>
+    <p class="intro">Opens a parsed replay in your own BAR with a timeline. Set it up once; after that, Watch on the
+      Replays page does the rest. Needs BAR installed.</p>
+    <p class="version" data-repo="burnhamrobertp/BAR-Rewind"></p>
+    <p class="note">Showing <span id="os-name">Windows</span> steps. <a href="#" id="other-os">Show the Linux steps</a></p>
+  </div>
+  <div class="panel" data-os="windows">
+    <p><a class="button primary" href="https://github.com/burnhamrobertp/BAR-Rewind/releases/latest/download/bar-rewind.exe">Download bar-rewind.exe</a></p>
+    <ol class="steps">
+      <li>Keep it somewhere it can stay. If the browser holds the download back, choose <b>Keep</b>.</li>
+      <li>Run it once. If Windows warns that it protected your PC: <b>More info</b> &gt; <b>Run anyway</b>.</li>
+      <li>Click Watch on a replay, let the browser open BAR Rewind, and type <code>y</code> when the player asks to
+        trust this site.</li>
+    </ol>
+    <p class="note">BAR not found? Put <code>{"bar_data": "&lt;BAR's data folder&gt;"}</code> in <code>%APPDATA%\bar-rewind.json</code>.</p>
+    <p class="note">To remove it: <code>bar-rewind.exe --uninstall</code>, then delete the file.</p>
+  </div>
+  <div class="panel" data-os="linux" hidden>
+    <p><a class="button primary" href="https://github.com/burnhamrobertp/BAR-Rewind/releases/latest/download/bar-rewind-player-linux">Download bar-rewind</a></p>
+    <ol class="steps">
+      <li>Install and register it (needs <code>xdg-utils</code>):
+        <code>mkdir -p ~/.local/bin &amp;&amp; mv ~/Downloads/bar-rewind-player-linux ~/.local/bin/bar-rewind &amp;&amp; chmod +x ~/.local/bin/bar-rewind &amp;&amp; ~/.local/bin/bar-rewind</code></li>
+      <li>Click Watch on a replay, and type <code>y</code> when the player asks to trust this site.</li>
+    </ol>
+    <p class="note">BAR not found? Put <code>{"bar_data": "&lt;BAR's data folder&gt;"}</code> in <code>~/.config/bar-rewind.json</code>.</p>
+    <p class="note">To remove it: <code>~/.local/bin/bar-rewind --uninstall</code>, then delete the file.</p>
+  </div>
+  <p class="note"><a href="https://github.com/burnhamrobertp/BAR-Rewind/releases/latest">Release notes and every file on GitHub</a></p>
+</main>
+<script src="site.js"></script>
+<script>
+let os = "windows";
+
+function show(next) {
+  os = next;
+  for (const block of document.querySelectorAll("[data-os]")) block.hidden = block.dataset.os !== os;
+  $("os-name").textContent = os === "linux" ? "Linux" : "Windows";
+  $("other-os").textContent = os === "linux" ? "Show the Windows steps" : "Show the Linux steps";
+}
+
+const platform = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || navigator.userAgent;
+show(/linux|x11/i.test(platform) && !/android/i.test(navigator.userAgent) ? "linux" : "windows");
+$("other-os").onclick = e => { e.preventDefault(); show(os === "linux" ? "windows" : "linux"); };
+</script>
+</body>
+</html>

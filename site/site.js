@@ -17,7 +17,7 @@ function ago(t) {
 
 const signedIn = fetch("api/me", { credentials: "same-origin" }).then(r => r.ok ? r.json() : null).catch(() => null);
 
-const TABS = [["./", "Replays"], ["workers.html", "Workers"], ["downloads.html", "Downloads"]];
+const TABS = [["./", "Replays"], ["workers.html", "Workers"]];
 
 function showTabs() {
   const here = location.pathname.split("/").pop() || "./";
@@ -38,5 +38,16 @@ function hideAccount() {
   $("account").replaceChildren();
 }
 
+async function showVersion(line) {
+  try {
+    const r = await fetch(`https://api.github.com/repos/${line.dataset.repo}/releases/latest`);
+    if (!r.ok) return;
+    const release = await r.json();
+    line.textContent = `Version ${release.tag_name}, released ${new Date(release.published_at).toLocaleDateString(undefined, { dateStyle: "medium" })}`;
+  } catch (e) {}
+}
+
 if ($("tabs")) showTabs();
+if (location.pathname.split("/").pop().startsWith("download")) document.querySelector("header .nav").setAttribute("aria-current", "page");
+for (const line of document.querySelectorAll("[data-repo]")) showVersion(line);
 signedIn.then(me => { if (me) showAccount(me); });
