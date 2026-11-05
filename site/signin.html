@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BAR Rewind</title>
+<style>
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #101214; color: #e6e8eb; font: 14px/1.45 system-ui, sans-serif; }
+  .box { text-align: center; padding: 32px 16px; }
+  h1 { font-size: 20px; margin: 0 0 16px; }
+  a { display: inline-block; background: #5aa9ff; color: #08121f; font-weight: 600; text-decoration: none; border-radius: 6px; padding: 9px 16px; }
+  p { color: #ef5b5b; min-height: 1.45em; margin: 14px 0 0; }
+</style>
+</head>
+<body>
+<div class="box">
+  <h1>BAR Rewind</h1>
+  <a id="go" href="api/login">Sign in with Discord</a>
+  <p id="why"></p>
+</div>
+<script>
+const query = new URLSearchParams(location.search);
+const next = query.get("next");
+if (next) document.getElementById("go").href = "api/login?next=" + encodeURIComponent(next);
+const why = query.get("signin");
+document.getElementById("why").textContent = why === "denied" ? "That Discord account doesn't have a role that's allowed in."
+  : why === "failed" ? "Discord sign-in didn't complete. Try again." : "";
+</script>
+</body>
+</html>

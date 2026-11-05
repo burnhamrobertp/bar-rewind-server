@@ -32,17 +32,6 @@
     <p class="note" id="pins-note" hidden>Workers move to the pinned releases at their next heartbeat; one on another parser
       gets no jobs until it has. An empty field unpins it. Parses older than the .curves version show as outdated.</p>
   </div>
-  <div class="panel" id="widgets-panel" hidden>
-    <h2>Parse widgets</h2>
-    <p class="intro">Extra widgets every worker runs in every parse. Workers fetch them from this server, so nobody sets
-      them up by hand. A worker without the current set takes no jobs, and replays parsed with another set can be parsed again.</p>
-    <ul id="widget-files" class="files"></ul>
-    <form id="widgets-form">
-      <input type="file" id="widget-input" multiple accept=".lua">
-      <button class="primary">Replace with these</button>
-      <button type="button" id="widgets-clear">Remove all</button>
-    </form>
-  </div>
   <div class="panel">
     <table>
       <thead><tr><th>Worker</th><th class="hide-narrow">Machine</th><th>Status</th><th></th></tr></thead>
@@ -111,33 +100,7 @@ async function showOverview() {
     $("pins").hidden = $("pins-note").hidden = false;
     for (const [key, id] of Object.entries(pinFields)) $(id).value = pins[key] || "";
   }
-  if (o.admin) showWidgets(await api("api/widgets"));
 }
-
-function showWidgets(set) {
-  $("widgets-panel").hidden = false;
-  $("widget-files").replaceChildren(...(set.files.length
-    ? set.files.map(f => el("li", {}, el("code", {}, f.name), ` ${Math.max(1, Math.round(f.size / 1024))} KB`))
-    : [el("li", { class: "note" }, "None: parses run without extra widgets.")]));
-}
-
-async function replaceWidgets(files) {
-  try {
-    showWidgets(await api("api/widgets", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ files }) }));
-  } catch (e) { $("error").textContent = e.message; }
-  refresh();
-}
-
-$("widgets-form").onsubmit = async e => {
-  e.preventDefault();
-  const picked = [...$("widget-input").files];
-  if (!picked.length) return;
-  if (!confirm(`Replace the parse widgets with ${picked.map(f => f.name).join(", ")}?`)) return;
-  await replaceWidgets(await Promise.all(picked.map(async f => ({ name: f.name, text: await f.text() }))));
-  $("widget-input").value = "";
-};
-
-$("widgets-clear").onclick = () => { if (confirm("Remove every parse widget?")) replaceWidgets([]); };
 
 $("pins").onsubmit = async e => {
   e.preventDefault();

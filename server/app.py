@@ -10,13 +10,14 @@
 #   GET, POST /api/admins {uid}, DELETE /api/admins/<uid>   (admins) who else is an admin
 #   GET, POST /api/widgets {files: [{name, text}]}   (admins) the widgets every parse runs: names and sizes, or a new set
 # and, under /api/worker/, the workers' own API.
-import mimetypes, re
+import mimetypes, re, urllib.parse
 from pathlib import Path
 
 from . import admins, auth, jobs, storage, widgets, workers
 from .web import Response, cookie, redirect, respond
 
 SITE = Path(__file__).resolve().parent.parent / "site"
+OPEN_PAGES = {"signin.html"}
 
 
 def route(req):
@@ -27,7 +28,7 @@ def route(req):
     if req.path == "/api/callback":
         return auth.callback(req)
     if req.path == "/api/logout":
-        return redirect("/", [cookie("s", "", 0)])
+        return redirect("/signin.html", [cookie("s", "", 0)])
     if req.path.startswith("/api/worker/"):
         return worker_route(req)
     if req.path.startswith("/api/dev-store/") and isinstance(storage.store, storage.Folder):
@@ -112,9 +113,17 @@ def static(req):
     if req.method not in ("GET", "HEAD"):
         return respond(405, {"error": "method not allowed"})
     name = req.path.lstrip("/") or "index.html"
+    extra = []
+    if name not in OPEN_PAGES:
+        user, extra = auth.signed_in(req)
+        if user is None:
+            if name.endswith(".html"):
+                target = req.path + ("?" + urllib.parse.urlencode(req.query) if req.query else "")
+                return redirect("/signin.html?next=" + urllib.parse.quote(target, safe=""))
+            return Response(401, b"sign in", {"content-type": "text/plain"})
     path = (SITE / name).resolve()
     if SITE not in path.parents or not path.is_file():
         return Response(404, b"not found", {"content-type": "text/plain"})
     kind = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
 
-    return Response(200, path.read_bytes(), {"content-type": kind, "cache-control": "no-cache"})
+    return Response(200, path.read_bytes(), {"content-type": kind, "cache-control": "no-cache"}, extra)

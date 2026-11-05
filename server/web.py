@@ -46,4 +46,4 @@ def redirect(location, cookies=()):
 
 
 def cookie(name, value, max_age):
-    return f"{name}={value}; Path=/api; Max-Age={max_age}; HttpOnly; Secure; SameSite=Lax"
+    return f"{name}={value}; Path=/; Max-Age={max_age}; HttpOnly; Secure; SameSite=Lax"

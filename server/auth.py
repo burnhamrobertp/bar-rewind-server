@@ -71,13 +71,20 @@ def is_admin(user):
     return user["uid"] in settings.ids("admin-ids") or db.one("SELECT 1 FROM admins WHERE uid = ?", user["uid"]) is not None
 
 
+def local_path(text):
+    """Only a path on this site, never somewhere else: //host or /\\host would leave it"""
+    return text if text.startswith("/") and not text.startswith(("//", "/\\")) else "/"
+
+
 def login(req):
     state = secrets.token_urlsafe(24)
     query = urllib.parse.urlencode({"response_type": "code", "client_id": settings.get("discord-client-id"),
                                     "scope": "identify guilds.members.read", "redirect_uri": settings.site() + "/api/callback",
                                     "state": state, "prompt": "none"})
 
-    return redirect("https://discord.com/oauth2/authorize?" + query, [cookie("st", state, 600)])
+    next_path = urllib.parse.quote(local_path(req.query.get("next", "/")), safe="")
+
+    return redirect("https://discord.com/oauth2/authorize?" + query, [cookie("st", state, 600), cookie("nx", next_path, 600)])
 
 
 def token(form):
@@ -89,15 +96,15 @@ def token(form):
 def callback(req):
     code, state = req.query.get("code", ""), req.query.get("state", "")
     if not code or not hmac.compare_digest(state, req.cookies.get("st", "")):
-        return redirect("/?signin=failed")
+        return redirect("/signin.html?signin=failed")
     status, grant = token({"grant_type": "authorization_code", "code": code, "redirect_uri": settings.site() + "/api/callback"})
     if status != 200:
-        return redirect("/?signin=failed")
+        return redirect("/signin.html?signin=failed")
     status, member = guild_member(grant["access_token"])
     if status not in (200, 404):
-        return redirect("/?signin=failed")
+        return redirect("/signin.html?signin=failed")
     if not allowed(member):
-        return redirect("/?signin=denied", [cookie("st", "", 0)])
+        return redirect("/signin.html?signin=denied", [cookie("st", "", 0)])
     user = member["user"]
     name = member.get("nick") or user.get("global_name") or user["username"]
     now = int(time.time())
@@ -109,7 +116,9 @@ def callback(req):
     payload = {"uid": user["id"], "name": name, "tok": grant["access_token"], "chk": now,
                "exp": now + min(SESSION_SECONDS, int(grant.get("expires_in", SESSION_SECONDS)))}
 
-    return redirect("/", [cookie("st", "", 0), cookie("s", sign(payload), SESSION_SECONDS)])
+    back = local_path(urllib.parse.unquote(req.cookies.get("nx", "/")))
+
+    return redirect(back, [cookie("st", "", 0), cookie("nx", "", 0), cookie("s", sign(payload), SESSION_SECONDS)])
 
 
 def signed_in(req, force_check=False):

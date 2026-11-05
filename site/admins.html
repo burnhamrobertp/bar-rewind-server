@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>BAR Rewind admins</title>
+<title>BAR Rewind admin</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -31,6 +31,17 @@
       <tbody id="admins"><tr><td colspan="3" class="note">Loading...</td></tr></tbody>
     </table>
     <p class="error" id="error"></p>
+  </div>
+  <div class="panel">
+    <h2>Parse widgets</h2>
+    <p class="intro">Extra widgets every worker runs in every parse. Workers fetch them from this server, so nobody sets
+      them up by hand. A worker without the current set takes no jobs, and replays parsed with another set can be parsed again.</p>
+    <ul id="widget-files" class="files"></ul>
+    <form id="widgets-form">
+      <input type="file" id="widget-input" multiple accept=".lua">
+      <button class="primary">Replace with these</button>
+      <button type="button" id="widgets-clear">Remove all</button>
+    </form>
   </div>
 </main>
 <script src="site.js"></script>
@@ -67,10 +78,6 @@ function show({ admins, others }) {
   $("add-button").disabled = !others.length;
 }
 
-async function refresh() {
-  try { show(await api("api/admins")); } catch (e) { $("error").textContent = e.message; }
-}
-
 $("add").onsubmit = async e => {
   e.preventDefault();
   if (!$("who").value) return;
@@ -78,6 +85,34 @@ $("add").onsubmit = async e => {
     show(await api("api/admins", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ uid: $("who").value }) }));
   } catch (err) { $("error").textContent = err.message; }
 };
+
+function showWidgets(set) {
+  $("widget-files").replaceChildren(...(set.files.length
+    ? set.files.map(f => el("li", {}, el("code", {}, f.name), ` ${Math.max(1, Math.round(f.size / 1024))} KB`))
+    : [el("li", { class: "note" }, "None: parses run without extra widgets.")]));
+}
+
+async function replaceWidgets(files) {
+  try {
+    showWidgets(await api("api/widgets", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ files }) }));
+  } catch (e) { $("error").textContent = e.message; }
+}
+
+$("widgets-form").onsubmit = async e => {
+  e.preventDefault();
+  const picked = [...$("widget-input").files];
+  if (!picked.length) return;
+  if (!confirm(`Replace the parse widgets with ${picked.map(f => f.name).join(", ")}?`)) return;
+  await replaceWidgets(await Promise.all(picked.map(async f => ({ name: f.name, text: await f.text() }))));
+  $("widget-input").value = "";
+};
+
+$("widgets-clear").onclick = () => { if (confirm("Remove every parse widget?")) replaceWidgets([]); };
+
+async function refresh() {
+  try { show(await api("api/admins")); } catch (e) { $("error").textContent = e.message; }
+  try { showWidgets(await api("api/widgets")); } catch (e) { $("error").textContent = e.message; }
+}
 
 refresh();
 setInterval(() => { if (!document.hidden) refresh(); }, 15000);

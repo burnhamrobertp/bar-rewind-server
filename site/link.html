@@ -26,10 +26,6 @@
     <p>The worker picks this up within a few seconds and starts taking replays. Pause or remove it any time
       on the <a href="workers.html">workers page</a>.</p>
   </div>
-  <div class="panel" id="signin" hidden>
-    <p>Sign in with Discord to approve the worker.</p>
-    <a class="button primary" id="signin-link" href="api/login">Sign in with Discord</a>
-  </div>
   <p class="error" id="error"></p>
 </main>
 <script src="site.js"></script>
@@ -56,11 +52,8 @@ function row(label, value) {
       row("Memory", w.mem_mb ? Math.round(w.mem_mb / 1024) + " GB" : "?"), row("CPU cores", w.cpus || "?"));
     $("ask").hidden = false;
   } catch (e) {
-    if (e.status === 401) {
-      // the sign-in comes back to the front page: it sends people with a code waiting back here
-      sessionStorage.setItem("link-code", code);
-      $("signin").hidden = false;
-    } else $("error").textContent = e.message;
+    if (e.status === 401) location.href = "signin.html?next=" + encodeURIComponent(location.pathname + location.search);
+    else $("error").textContent = e.message;
   }
 })();
 

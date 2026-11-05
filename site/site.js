@@ -19,7 +19,7 @@ const signedIn = fetch("api/me", { credentials: "same-origin" }).then(r => r.ok 
 
 function showTabs(admin) {
   const here = location.pathname.split("/").pop() || "./";
-  const tabs = [["./", "Replays"], ["workers.html", "Workers"], ...(admin ? [["admins.html", "Admins"]] : [])];
+  const tabs = [["./", "Replays"], ["workers.html", "Workers"], ...(admin ? [["admins.html", "Admin"]] : [])];
   $("tabs").replaceChildren(...tabs.map(([href, label]) =>
     el("a", href === here || (href === "./" && here === "index.html") ? { href, "aria-current": "page" } : { href }, label)));
 }
@@ -31,10 +31,6 @@ function showAccount(me) {
   document.addEventListener("click", e => { if (!menu.contains(e.target)) menu.open = false; });
   document.addEventListener("keydown", e => { if (e.key === "Escape") menu.open = false; });
   $("account").replaceChildren(menu);
-}
-
-function hideAccount() {
-  $("account").replaceChildren();
 }
 
 async function showVersion(line) {
