@@ -87,7 +87,8 @@ CREATE TABLE IF NOT EXISTS users (
 """
 
 # columns that came after their table: CREATE TABLE IF NOT EXISTS leaves an existing table as it was
-ADDED_COLUMNS = (("jobs", "widgets", "TEXT"), ("workers", "widgets", "TEXT NOT NULL DEFAULT ''"))
+ADDED_COLUMNS = (("jobs", "widgets", "TEXT"), ("workers", "widgets", "TEXT NOT NULL DEFAULT ''"),
+                 ("enrollments", "address", "TEXT NOT NULL DEFAULT ''"))
 
 _local = threading.local()
 _path = None

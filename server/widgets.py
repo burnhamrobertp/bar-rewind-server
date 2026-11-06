@@ -11,6 +11,7 @@ from .web import Response, respond
 NAME = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9_.-]{0,63}\.lua")
 MAX_BYTES = 1 << 20
 _swap = threading.Lock()
+_edit = threading.Lock()
 
 
 def folder():
@@ -48,8 +49,8 @@ def store(sent):
     for f in sent:
         (staging / f["name"]).write_text(f["text"], encoding="utf-8")
     old = here.with_name(".widgets-old")
-    shutil.rmtree(old, ignore_errors=True)
     with _swap:
+        shutil.rmtree(old, ignore_errors=True)
         if here.exists():
             here.rename(old)
         staging.rename(here)
@@ -73,11 +74,12 @@ def add(req, user):
         return respond(400, {"error": "send files: [{name, text}]"})
     if any(not NAME.fullmatch(f["name"]) for f in sent) or len({f["name"] for f in sent}) != len(sent):
         return respond(400, {"error": "widget names are distinct, end in .lua, use letters, digits, _ . - and don't start with a dot"})
-    kept = {f["name"]: f["body"] for f in files()}
-    kept.update({f["name"]: f["text"] for f in sent})
-    if sum(len(text.encode()) for text in kept.values()) > MAX_BYTES:
-        return respond(400, {"error": "the widgets would add up to more than 1 MB"})
-    store([{"name": name, "text": text} for name, text in kept.items()])
+    with _edit:
+        kept = {f["name"]: f["body"] for f in files()}
+        kept.update({f["name"]: f["text"] for f in sent})
+        if sum(len(text.encode()) for text in kept.values()) > MAX_BYTES:
+            return respond(400, {"error": "the widgets would add up to more than 1 MB"})
+        store([{"name": name, "text": text} for name, text in kept.items()])
 
     return listing(req, user)
 
@@ -96,8 +98,8 @@ def download(req, user, name):
 def remove(req, user, name):
     if not auth.is_admin(user):
         return respond(403, {"error": "admins only"})
-    kept = [{"name": f["name"], "text": f["body"]} for f in files() if f["name"] != name]
-    store(kept)
+    with _edit:
+        store([{"name": f["name"], "text": f["body"]} for f in files() if f["name"] != name])
 
     return listing(req, user)
 

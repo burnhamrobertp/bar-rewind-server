@@ -27,6 +27,8 @@ WORKER_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f
 CODE_LETTERS = "BCDFGHJKLMNPQRSTVWXZ"
 ENROLL_SECONDS = 15 * 60
 PENDING_ENROLLMENTS = 50
+PENDING_PER_ADDRESS = 5
+COLLECT_SECONDS = 60
 POLL_SECONDS = 15
 UPLOAD_SECONDS = 3 * 3600
 STALE = 300
@@ -53,6 +55,10 @@ def short(body, key, n=200):
 
 def enroll(req):
     now = int(time.time())
+    # Cloudflare's tunnel is the only way in and sets this itself, whatever the client sent
+    address = req.headers.get("cf-connecting-ip", "")
+    if db.one("SELECT count(*) AS n FROM enrollments WHERE expires > ? AND address = ?", now, address)["n"] >= PENDING_PER_ADDRESS:
+        return respond(429, {"error": f"{PENDING_PER_ADDRESS} workers from here are already waiting to be approved: approve them, or wait for them to expire"})
     if db.one("SELECT count(*) AS n FROM enrollments WHERE expires > ?", now)["n"] >= PENDING_ENROLLMENTS:
         return respond(429, {"error": "too many workers are waiting to be approved: try again later"})
     body = req.json()
@@ -67,7 +73,8 @@ def enroll(req):
     user_code = "".join(secrets.choice(CODE_LETTERS) for _ in range(8))
     user_code = user_code[:4] + "-" + user_code[4:]
     with db.tx() as c:
-        db.insert(c, "enrollments", {"user_code": user_code, "device_hash": digest(device_code), "expires": now + ENROLL_SECONDS, "info": info})
+        db.insert(c, "enrollments", {"user_code": user_code, "device_hash": digest(device_code), "expires": now + ENROLL_SECONDS, "info": info,
+                                     "address": address})
 
     return respond(200, {"device_code": device_code, "user_code": user_code, "interval": 5, "expires_in": ENROLL_SECONDS,
                          "verify_url": f"{settings.site()}/link.html?code={urllib.parse.quote(user_code)}"})
@@ -112,7 +119,8 @@ def approve(req, user):
         db.insert(c, "workers", {"id": worker_id, "owner_uid": user["uid"], "owner_name": user["name"],
                                  "token_hash": digest(token), "created": int(time.time()), "mem_mb": info["mem_mb"] or 0,
                                  "cpus": info["cpus"], "os": info["os"]})
-        db.update(c, "enrollments", "user_code", code, {"worker_id": worker_id, "token": token})
+        db.update(c, "enrollments", "user_code", code, {"worker_id": worker_id, "token": token,
+                                                        "expires": max(row["expires"], int(time.time()) + COLLECT_SECONDS)})
 
     return respond(200, {"worker": worker_id})
 
