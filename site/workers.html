@@ -76,7 +76,7 @@ function row(w) {
     const minutes = prompt("Longest replay this worker takes, in minutes (empty for no limit):", w.max_minutes || "");
     if (minutes !== null) change(w.id, { max_minutes: minutes.trim() ? Number(minutes) : null });
   };
-  const remove = el("button", {}, "Remove");
+  const remove = el("button", { class: "danger" }, "Remove");
   remove.onclick = async () => {
     if (!confirm(`Remove worker ${w.id}? It stops parsing and has to be enrolled again to come back.`)) return;
     try { await api("api/workers/" + w.id, { method: "DELETE" }); } catch (e) { $("error").textContent = e.message; }
