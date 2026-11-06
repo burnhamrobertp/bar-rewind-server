@@ -56,12 +56,13 @@ with open("/etc/litestream.yml", "w") as f:
     replica:
       type: s3
       bucket: {s['r2-bucket']}
-      path: db
+      path: backup
       endpoint: {s['r2-endpoint']}
       region: auto
       force-path-style: true
       access-key-id: {s['r2-access-key-id']}
       secret-access-key: {s['r2-secret-access-key']}
+      sse-customer-key: {s['backup-key']}
 """)
 EOF
 umask 022

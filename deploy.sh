@@ -45,6 +45,8 @@ secret() {
 echo "== AWS account $(aws sts get-caller-identity --query Account --output text) (profile $AWS_PROFILE)"
 echo "== settings"
 has session-key || put session-key SecureString "$(openssl rand -hex 32)"
+# R2 keeps the database backup encrypted with this (SSE-C) and serves it only to a request that sends it
+has backup-key || put backup-key SecureString "$(openssl rand -base64 32)"
 secret discord-client-secret "${DISCORD_CLIENT_SECRET:-}" DISCORD_CLIENT_SECRET
 secret cloudflared-token "${CLOUDFLARED_TOKEN:-}" CLOUDFLARED_TOKEN
 secret r2-access-key-id "${R2_ACCESS_KEY_ID:-}" R2_ACCESS_KEY_ID
