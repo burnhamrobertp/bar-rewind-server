@@ -56,9 +56,23 @@ class Enrollment(WorkerTest):
         db.conn().execute("UPDATE enrollments SET expires = 0")
         self.assertEqual(404, self.call("POST", "/api/link", {"code": start["user_code"]}, self.session()).status)
 
+    def test_one_address_has_only_so_many_waiting(self):
+        here = {"cf-connecting-ip": "203.0.113.7"}
+        for _ in range(workers.PENDING_PER_ADDRESS):
+            self.assertEqual(200, self.call("POST", "/api/worker/enroll", {"id": str(uuid.uuid4())}, headers=here).status)
+        self.assertEqual(429, self.call("POST", "/api/worker/enroll", {"id": str(uuid.uuid4())}, headers=here).status)
+        self.assertEqual(200, self.call("POST", "/api/worker/enroll", {"id": str(uuid.uuid4())}, headers={"cf-connecting-ip": "198.51.100.2"}).status)
+
+    def test_an_approval_at_the_last_moment_can_still_be_collected(self):
+        start = self.call("POST", "/api/worker/enroll", {"id": DESK}).json()
+        db.conn().execute("UPDATE enrollments SET expires = ?", (int(time.time()) + 1,))
+        self.assertEqual(200, self.call("POST", "/api/link", {"code": start["user_code"]}, self.session()).status)
+        self.assertGreaterEqual(db.one("SELECT expires FROM enrollments")["expires"], int(time.time()) + workers.COLLECT_SECONDS - 5)
+        self.assertEqual(200, self.call("POST", "/api/worker/enroll/poll", {"device_code": start["device_code"]}).status)
+
     def test_only_so_many_wait_at_once(self):
-        for _ in range(workers.PENDING_ENROLLMENTS):
-            self.call("POST", "/api/worker/enroll", {"id": str(uuid.uuid4())})
+        for i in range(workers.PENDING_ENROLLMENTS):
+            self.call("POST", "/api/worker/enroll", {"id": str(uuid.uuid4())}, headers={"cf-connecting-ip": f"10.0.0.{i}"})
         self.assertEqual(429, self.call("POST", "/api/worker/enroll", {"id": str(uuid.uuid4())}).status)
 
     def test_an_unknown_token_is_refused(self):
