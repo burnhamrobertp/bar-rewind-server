@@ -39,7 +39,7 @@ Once:
 1. A Discord application at https://discord.com/developers/applications, with
    `https://$DOMAIN/api/callback` (default bar-rewind.robotofham.com) as an OAuth2 redirect.
 2. An R2 bucket, an Object Read & Write API token for it, and a lifecycle rule deleting `curves/` and
-   `logs/` after 60 days (leave `db/` alone: it's the database backup).
+   `logs/` after 60 days (leave `backup/` alone: it's the database backup, encrypted with the `backup-key` in SSM, so keep that too).
 3. A Cloudflare Tunnel (Zero Trust > Networks > Tunnels) whose public hostname is `$DOMAIN`, pointing at
    `http://localhost:8080`.
 
