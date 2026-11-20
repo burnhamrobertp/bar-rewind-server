@@ -61,6 +61,7 @@ Resources:
       IamInstanceProfile: !Ref ServerProfile
       SecurityGroupIds: [!GetAtt ServerSecurityGroup.GroupId]
       MetadataOptions: { HttpTokens: required }
+      PropagateTagsToVolumeOnCreation: true
       BlockDeviceMappings:
         - DeviceName: /dev/sda1
           Ebs: { VolumeSize: 20, VolumeType: gp3, Encrypted: true }
@@ -77,6 +78,15 @@ Resources:
           cd /opt/bar-rewind-server
           git checkout --detach ${Commit}
           PARAMS=/${AWS::StackName} AWS_DEFAULT_REGION=${AWS::Region} deploy/install.sh
+
+  ServerAddress:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      InstanceId: !Ref Server
+      Tags:
+        - { Key: Name, Value: !Ref AWS::StackName }
+        - { Key: project, Value: !Ref AWS::StackName }
 
   Budget:
     Type: AWS::Budgets::Budget
